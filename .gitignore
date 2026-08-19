@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .env
+.env.server
+.env.production
 debug.log
 *.zip
 

@@ -2407,6 +2407,34 @@ try {
 const server = http.createServer(app);
 debug('HTTP server created');
 
+function startStandaloneServer(startPort) {
+  const base = Number(startPort) || 3000;
+  const maxAttempts = Math.min(Math.max(Number(process.env.PORT_FALLBACK_MAX) || 10, 1), 100);
+
+  function tryListen(port, attempt) {
+    server.once('error', (err) => {
+      if (err.code === 'EADDRINUSE' && attempt < maxAttempts) {
+        debug('Port ' + port + ' in use, trying ' + (port + 1));
+        tryListen(port + 1, attempt + 1);
+        return;
+      }
+      debug('Server failed to listen on port ' + port, err);
+      throw err;
+    });
+
+    server.listen(port, () => {
+      server.removeAllListeners('error');
+      process.env.ACTUAL_PORT = String(port);
+      debug('SERVER STARTED at http://localhost:' + port);
+      bootSchema();
+    });
+  }
+
+  debug('No Passenger detected - trying ports from ' + base + ' (up to ' + maxAttempts + ' attempts)');
+  debug('Server starting to listen');
+  tryListen(base, 1);
+}
+
 // CloudLinux / Phusion Passenger needs listen('passenger')
 if (typeof PhusionPassenger !== 'undefined') {
   debug('Passenger detected - listening on passenger socket');
@@ -2417,10 +2445,5 @@ if (typeof PhusionPassenger !== 'undefined') {
     bootSchema();
   });
 } else {
-  debug('No Passenger detected - listening on port ' + PORT);
-  debug('Server starting to listen');
-  server.listen(PORT, () => {
-    debug('SERVER STARTED at http://localhost:' + PORT);
-    bootSchema();
-  });
+  startStandaloneServer(process.env.PORT || 3000);
 }
