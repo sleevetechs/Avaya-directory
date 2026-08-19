@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#296F35" />
+  <meta name="description" content="Compass Logistics employee directory — extensions, mobile and station contacts." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Directory" />
+  <title>Compass Directory</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: { 50:'#eaf7ec', 100:'#c2e6c8', 200:'#9bd5a3', 500:'#3a8a4a', 600:'#296F35', 700:'#1e5929', 900:'#0f3315' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .card-hover { transition: box-shadow 0.2s ease, transform 0.2s ease; cursor: pointer; }
+    .card-hover:hover { box-shadow: 0 12px 35px rgba(41,111,53,0.1); transform: translateY(-2px); }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    .badge { display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:600;letter-spacing:0.03em; }
+    .modal-enter { animation: modalIn 0.25s ease-out; }
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.95) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    .fade-in { animation: fadeIn 0.4s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .stat-card { transition: all 0.2s ease; }
+    .stat-card:hover { transform: translateY(-1px); }
+    @media (prefers-reduced-motion: reduce) { .modal-enter, .fade-in { animation: none; } }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-slate-50 via-white to-slate-50 min-h-screen">
+
+<!-- Passcode gate for non-office IPs -->
+<div id="accessGate" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gradient-to-br from-brand-900 via-brand-700 to-brand-600">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-2xl p-6 sm:p-8">
+    <div class="text-center mb-6">
+      <img src="/logo.png" alt="Compass Avaya Directory" class="h-20 w-auto mx-auto mb-4 rounded-xl" />
+      <h2 class="text-xl font-bold text-slate-800">Directory access</h2>
+      <p class="text-sm text-slate-500 mt-1">You are outside the office network. Enter the passcode to continue.</p>
+    </div>
+    <form id="accessGateForm" onsubmit="submitAccessPasscode(event)">
+      <label class="block text-xs font-semibold text-slate-600 mb-1.5">Passcode</label>
+      <input id="accessGateInput" type="password" autocomplete="current-password" required
+        class="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 mb-3" placeholder="Enter passcode" />
+      <p id="accessGateError" class="hidden mb-3 text-sm text-red-600 font-medium"></p>
+      <button type="submit" id="accessGateBtn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer transition-colors">Unlock directory</button>
+    </form>
+    <p class="text-xs text-slate-400 text-center mt-4">Your IP: <span id="accessGateIp" class="font-mono">…</span></p>
+    <p class="text-xs text-slate-400 text-center mt-2"><a href="/login" class="text-brand-600 hover:underline font-medium">Admin login</a></p>
+  </div>
+</div>
+
+<div id="appShell" class="hidden">
+<!-- HEADER -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="flex items-center justify-between h-16">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="/logo.png" alt="Compass Avaya Directory" class="h-12 w-auto rounded-lg shrink-0" />
+        <p class="text-slate-500 text-xs font-medium hidden sm:block truncate">Employee Directory</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <div id="totalBadge" class="text-sm text-slate-500 hidden sm:block"></div>
+        <button type="button" id="installAppBtn" onclick="installPwaApp()" class="hidden px-3 py-2 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl transition-all cursor-pointer items-center gap-1.5 shadow-sm shadow-brand-600/20">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          <span>Install app</span>
+        </button>
+        <button type="button" id="installHelpBtn" onclick="showInstallHelp()" class="px-3 py-2 text-sm bg-white hover:bg-slate-50 text-slate-700 font-medium rounded-xl transition-all cursor-pointer ring-1 ring-slate-200">
+          Install
+        </button>
+        <a href="/login" id="adminLink" class="px-4 py-2 text-sm bg-slate-100 hover:bg-slate-200 rounded-xl transition-all duration-200 text-slate-700 font-medium ring-1 ring-slate-200">
+          Admin
+        </a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Offline / sync status -->
+<div id="syncBanner" class="hidden sticky top-16 z-40 px-4 sm:px-6">
+  <div class="max-w-7xl mx-auto">
+    <div id="syncBannerInner" class="mt-3 rounded-xl px-3.5 py-2.5 text-xs font-medium flex items-center justify-between gap-3 border"></div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  if (token) {
+    const admin = JSON.parse(localStorage.getItem('admin') || sessionStorage.getItem('admin') || '{}');
+    const link = document.getElementById('adminLink');
+    if (admin.role === 'super_admin' || admin.role === 'admin') {
+      link.href = admin.role === 'super_admin' ? '/superadmin' : '/admin';
+      link.textContent = 'Dashboard';
+    }
+  }
+});
+</script>
+
+<!-- BRANCHES -->
+<div id="stationStripWrap" class="hidden border-b border-slate-200 bg-slate-50/80">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+    <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2.5">Countries</p>
+    <div id="stationStrip" class="flex flex-wrap gap-2.5"></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+  <!-- SEARCH & FILTERS -->
+  <div class="bg-white rounded-2xl shadow-sm shadow-slate-200/50 border border-slate-200/80 p-4 sm:p-5 mb-6 fade-in">
+    <div class="flex flex-wrap gap-3 items-center">
+      <div class="flex-1 min-w-64 relative">
+        <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+        <input id="searchInput" type="text" placeholder="Search by name, extension, mobile, department..."
+          class="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 transition-all bg-slate-50/50" />
+      </div>
+      <select id="branchFilter" class="border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 cursor-pointer transition-all">
+        <option value="">All Countries</option>
+      </select>
+      <select id="deptFilter" class="border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 cursor-pointer transition-all">
+        <option value="">All Departments</option>
+      </select>
+      <select id="worksForFilter" class="border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 cursor-pointer transition-all">
+        <option value="">Works for: Any</option>
+      </select>
+      <button onclick="clearFilters()" class="px-4 py-2.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 bg-white rounded-xl hover:bg-slate-50 cursor-pointer transition-all font-medium">
+        Clear
+      </button>
+    </div>
+    <div id="resultCount" class="mt-2 text-xs text-slate-400 font-medium"></div>
+  </div>
+
+  <!-- SELECTED BRANCH / STATION -->
+  <div id="selectedStationBox" class="hidden mb-6 rounded-2xl border border-brand-200 bg-brand-50/60 p-4 fade-in">
+    <p class="text-[11px] font-bold text-brand-700 uppercase tracking-wider mb-2">Station</p>
+    <div id="selectedStationContent"></div>
+  </div>
+
+  <!-- GRID -->
+  <div id="employeeGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+
+  <!-- EMPTY STATE -->
+  <div id="emptyState" class="hidden text-center py-24 text-slate-400 fade-in">
+    <svg class="w-16 h-16 mx-auto mb-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p class="font-semibold text-slate-500">No results found</p>
+    <p class="text-sm mt-1">Try adjusting your search or filters</p>
+  </div>
+</main>
+
+<!-- MODAL -->
+<div id="modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter" id="modalContent"></div>
+</div>
+
+<!-- Install help modal -->
+<div id="installHelpModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm" onclick="closeInstallHelp()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 p-6 modal-enter">
+    <div class="flex items-start justify-between gap-3 mb-3">
+      <h2 class="text-lg font-bold text-slate-800">Install Compass Directory</h2>
+      <button type="button" onclick="closeInstallHelp()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="installHelpBody" class="text-sm text-slate-600 space-y-3"></div>
+    <button type="button" id="installHelpAction" onclick="installPwaApp()" class="hidden mt-5 w-full py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Install now</button>
+  </div>
+</div>
+</div><!-- /appShell -->
+
+<script src="app.js"></script>
+<script src="/register-sw.js"></script>
+</body>
+</html>

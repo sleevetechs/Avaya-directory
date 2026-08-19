@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+debug.log
+*.zip
+
+.local-mysql/
+.mysql-data/
+
+.DS_Store
+Thumbs.db

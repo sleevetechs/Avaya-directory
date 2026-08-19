@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#296F35" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Directory" />
+  <title>Super Admin - Compass Directory</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: { 50:'#eaf7ec', 100:'#c2e6c8', 200:'#9bd5a3', 500:'#3a8a4a', 600:'#296F35', 700:'#1e5929', 900:'#0f3315' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .modal-enter { animation: modalIn 0.2s ease-out; }
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .toast-in { animation: slideIn 0.3s ease-out; }
+    .fade-in { animation: fadeIn 0.2s ease; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    .tab-btn { transition: all 0.2s ease; }
+    .input-focus { transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+    .input-focus:focus { border-color: #296F35; box-shadow: 0 0 0 3px rgba(41,111,53,0.12); }
+    @media (prefers-reduced-motion: reduce) { .modal-enter, .toast-in, .fade-in { animation: none; } }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="flex items-center justify-between h-16">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="/logo.png" alt="Compass Avaya Directory" class="h-12 w-auto rounded-lg shrink-0" />
+        <div class="min-w-0">
+          <h1 class="text-lg font-bold text-slate-800 leading-tight">Super Admin Panel</h1>
+          <p class="text-brand-600 text-xs font-medium">Manage Admins &amp; View Logs</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <span id="adminInfo" class="text-slate-500 hidden sm:inline"></span>
+        <a href="/admin" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors font-medium">Employees</a>
+        <a href="/" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors font-medium">Directory</a>
+        <button onclick="logout()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-colors font-medium cursor-pointer">Logout</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+  <div class="flex gap-2 mb-6 p-1 bg-white rounded-2xl shadow-sm border border-slate-200/80 inline-flex">
+    <button id="tabAdmins" onclick="showTab('admins')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl bg-brand-600 text-white cursor-pointer">Admins</button>
+    <button id="tabLogs" onclick="showTab('logs')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Activity Logs</button>
+  </div>
+
+  <div id="panelAdmins">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-bold text-slate-800">Admin Accounts</h2>
+      <button onclick="openAddAdminModal()" class="px-4 py-2.5 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shadow-sm active:scale-[0.97]">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+        Add Admin
+      </button>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/80">
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Name</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Role</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Status</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Created</th>
+              <th class="text-right px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="adminTable" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="panelLogs" class="hidden">
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+      <h2 class="text-lg font-bold text-slate-800">Activity Logs</h2>
+      <select id="logDateFilter" onchange="loadLogs()" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+        <option value="">All Time</option>
+        <option value="week">Last Week</option>
+        <option value="month">Last Month</option>
+      </select>
+      <select id="logActionFilter" onchange="loadLogs()" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+        <option value="">All Actions</option>
+        <option value="create">Create</option>
+        <option value="update">Update</option>
+        <option value="delete_request">Delete Request</option>
+        <option value="delete_confirm">Delete Confirm</option>
+        <option value="delete_cancel">Delete Cancel</option>
+        <option value="login">Login</option>
+        <option value="create_admin">Create Admin</option>
+        <option value="update_admin">Update Admin</option>
+        <option value="delete_admin">Delete Admin</option>
+      </select>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="overflow-x-auto max-h-[600px] overflow-y-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50/80 border-b border-slate-100 sticky top-0">
+            <tr>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Date/Time</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Admin</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Action</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Entity</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Details</th>
+            </tr>
+          </thead>
+          <tbody id="logTable" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div id="adminModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeAdminModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="adminModalTitle" class="text-lg font-bold text-slate-800">Add Admin</h2>
+      <button onclick="closeAdminModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="adminForm" onsubmit="handleAdminSubmit(event)">
+      <input type="hidden" id="adminId" />
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Name *</label>
+          <input id="adminName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Email *</label>
+          <input id="adminEmail" type="email" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Password <span id="pwdLabel" class="text-slate-400">*</span></label>
+          <input id="adminPassword" type="password" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Role</label>
+          <select id="adminRole" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="viewer">Viewer (directory only)</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Active</label>
+          <select id="adminActive" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div id="adminError" class="hidden mt-4 p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3 mt-5">
+        <button type="button" onclick="closeAdminModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer active:scale-[0.98]">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold text-white toast-in"></div>
+
+<script>
+let adminUser = null;
+
+function getToken() { return localStorage.getItem('token') || sessionStorage.getItem('token'); }
+function logout() { localStorage.removeItem('token'); localStorage.removeItem('admin'); sessionStorage.removeItem('token'); sessionStorage.removeItem('admin'); window.location.href = '/login'; }
+function getHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() }; }
+
+function showTab(tab) {
+  document.getElementById('panelAdmins').classList.toggle('hidden', tab !== 'admins');
+  document.getElementById('panelLogs').classList.toggle('hidden', tab !== 'logs');
+  const activeTab = 'tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl bg-brand-600 text-white cursor-pointer';
+  const inactiveTab = 'tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer';
+  document.getElementById('tabAdmins').className = tab === 'admins' ? activeTab : inactiveTab;
+  document.getElementById('tabLogs').className = tab === 'logs' ? activeTab : inactiveTab;
+  if (tab === 'logs') loadLogs();
+}
+
+function formatDate(d) {
+  if (!d) return '-';
+  return new Date(d).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = color;
+  t.classList.remove('hidden');
+  t.className = 'hidden fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold text-white toast-in';
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 3200);
+}
+
+async function loadAdmins() {
+  try {
+    const res = await fetch('/api/admins', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (res.status === 401 || res.status === 403) { logout(); return; }
+    const data = await res.json();
+    const tbody = document.getElementById('adminTable');
+    tbody.innerHTML = '';
+    const PRIMARY = 'super-admin@compasslog.com';
+    data.forEach(a => {
+      const isPrimary = String(a.email || '').toLowerCase() === PRIMARY;
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-slate-50 transition-colors';
+      tr.innerHTML = `
+        <td class="px-4 py-3.5 font-semibold text-slate-800">${a.name}${isPrimary ? ' <span class="text-[10px] font-bold text-brand-600 uppercase ml-1">Primary</span>' : ''}</td>
+        <td class="px-4 py-3.5 text-slate-600">${a.email}</td>
+        <td class="px-4 py-3.5"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${a.role === 'super_admin' ? 'bg-brand-100 text-brand-700' : a.role === 'viewer' ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'}">${a.role}</span></td>
+        <td class="px-4 py-3.5"><span class="inline-flex items-center gap-1.5 text-xs font-medium ${a.is_active ? 'text-green-700' : 'text-red-700'}"><span class="w-1.5 h-1.5 rounded-full ${a.is_active ? 'bg-green-500' : 'bg-red-500'}"></span>${a.is_active ? 'Active' : 'Inactive'}</span></td>
+        <td class="px-4 py-3.5 text-xs text-slate-400">${formatDate(a.created_at)}</td>
+        <td class="px-4 py-3.5">
+          <div class="flex items-center justify-end gap-1">
+            <button onclick="openEditAdminModal(${a.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer transition-colors" title="${isPrimary ? 'Change password' : 'Edit'}"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg></button>
+            ${(!isPrimary && a.id !== adminUser.id) ? `<button onclick="deleteAdmin(${a.id},'${a.name}')" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl cursor-pointer transition-colors" title="Deactivate"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : ''}
+          </div>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+  } catch { showToast('Error loading admins', '#dc2626'); }
+}
+
+function openAddAdminModal() {
+  document.getElementById('adminModalTitle').textContent = 'Add Admin';
+  document.getElementById('adminId').value = '';
+  document.getElementById('adminForm').reset();
+  document.getElementById('adminPassword').required = true;
+  document.getElementById('pwdLabel').textContent = '*';
+  document.getElementById('adminError').classList.add('hidden');
+  document.getElementById('adminModal').classList.remove('hidden');
+}
+
+function openEditAdminModal(id) {
+  document.getElementById('adminModalTitle').textContent = 'Edit Admin';
+  document.getElementById('adminId').value = id;
+  document.getElementById('adminPassword').required = false;
+  document.getElementById('pwdLabel').textContent = '(leave blank to keep)';
+  document.getElementById('adminError').classList.add('hidden');
+  fetch('/api/admins', { headers: { 'Authorization': 'Bearer ' + getToken() } })
+    .then(r => r.json())
+    .then(data => {
+      const a = data.find(x => x.id === id);
+      if (!a) return;
+      const isPrimary = String(a.email || '').toLowerCase() === 'super-admin@compasslog.com';
+      document.getElementById('adminName').value = a.name;
+      document.getElementById('adminEmail').value = a.email;
+      document.getElementById('adminRole').value = a.role === 'viewer' ? 'viewer' : (a.role === 'super_admin' ? 'admin' : a.role);
+      document.getElementById('adminActive').value = a.is_active;
+      document.getElementById('adminEmail').disabled = isPrimary;
+      document.getElementById('adminRole').disabled = isPrimary;
+      document.getElementById('adminActive').disabled = isPrimary;
+      if (isPrimary) {
+        document.getElementById('adminModalTitle').textContent = 'Change Super Admin password';
+        // Keep role value for display when disabled — inject temp option
+        const roleSel = document.getElementById('adminRole');
+        if (![...roleSel.options].some(o => o.value === 'super_admin')) {
+          const opt = document.createElement('option');
+          opt.value = 'super_admin';
+          opt.textContent = 'Super Admin';
+          roleSel.appendChild(opt);
+        }
+        roleSel.value = 'super_admin';
+      }
+    });
+  document.getElementById('adminModal').classList.remove('hidden');
+}
+
+function closeAdminModal() {
+  document.getElementById('adminEmail').disabled = false;
+  document.getElementById('adminRole').disabled = false;
+  document.getElementById('adminActive').disabled = false;
+  document.getElementById('adminModal').classList.add('hidden');
+}
+
+async function handleAdminSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('adminId').value;
+  const body = {
+    name: document.getElementById('adminName').value,
+    email: document.getElementById('adminEmail').value,
+    role: document.getElementById('adminRole').value,
+    is_active: parseInt(document.getElementById('adminActive').value),
+  };
+  const pwd = document.getElementById('adminPassword').value;
+  if (pwd) body.password = pwd;
+  if (!id && !pwd) { showToast('Password is required', '#dc2626'); return; }
+
+  const errEl = document.getElementById('adminError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/admins' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      closeAdminModal();
+      showToast(id ? 'Admin updated' : 'Admin created', '#059669');
+      loadAdmins();
+    } else {
+      const data = await res.json();
+      errEl.textContent = data.error;
+      errEl.classList.remove('hidden');
+    }
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+async function deleteAdmin(id, name) {
+  if (!confirm('Deactivate admin "' + name + '"? They will be unable to login.')) return;
+  try {
+    const res = await fetch('/api/admins/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    if (res.ok) { showToast('Admin deactivated', '#ea580c'); loadAdmins(); }
+    else { const d = await res.json(); showToast(d.error, '#dc2626'); }
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+async function loadLogs() {
+  const params = new URLSearchParams();
+  const df = document.getElementById('logDateFilter').value;
+  const af = document.getElementById('logActionFilter').value;
+  if (df) params.set('date_filter', df);
+  if (af) params.set('action', af);
+  try {
+    const res = await fetch('/api/logs?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (res.status === 403) { showToast('Access denied', '#dc2626'); return; }
+    const logs = await res.json();
+    const tbody = document.getElementById('logTable');
+    tbody.innerHTML = '';
+    if (!logs.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center py-12 text-slate-400"><p class="font-medium">No logs found</p></td></tr>';
+      return;
+    }
+    logs.forEach(l => {
+      const actionBadge = {
+        create: 'bg-green-100 text-green-700',
+        update: 'bg-blue-100 text-blue-700',
+        delete_request: 'bg-orange-100 text-orange-700',
+        delete_confirm: 'bg-red-100 text-red-700',
+        delete_cancel: 'bg-amber-100 text-amber-700',
+        login: 'bg-slate-100 text-slate-700',
+        create_admin: 'bg-brand-100 text-brand-700',
+        update_admin: 'bg-brand-100 text-brand-700',
+        delete_admin: 'bg-red-100 text-red-700',
+      }[l.action] || 'bg-slate-100 text-slate-700';
+      let details = l.action;
+      if (l.new_data) {
+        try {
+          const nd = typeof l.new_data === 'string' ? JSON.parse(l.new_data) : l.new_data;
+          details = l.action === 'create' ? 'Created: ' + (nd.name || nd.email || '') :
+                    l.action === 'delete_request' ? 'Requested delete' :
+                    l.action === 'delete_confirm' ? 'Confirmed delete' :
+                    l.action === 'delete_cancel' ? 'Cancelled delete request' :
+                    l.action === 'login' ? 'Logged in' :
+                    l.action === 'create_admin' ? 'Created: ' + (nd.name || nd.email || '') :
+                    l.action;
+        } catch {}
+      }
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-slate-50 transition-colors';
+      tr.innerHTML = `
+        <td class="px-4 py-3.5 text-xs text-slate-400 whitespace-nowrap">${formatDate(l.created_at)}</td>
+        <td class="px-4 py-3.5 text-xs font-medium text-slate-700">${l.admin_name || l.admin_email}</td>
+        <td class="px-4 py-3.5"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${actionBadge}">${l.action}</span></td>
+        <td class="px-4 py-3.5 text-xs text-slate-600">${l.entity_type}${l.entity_id ? ' #' + l.entity_id : ''}</td>
+        <td class="px-4 py-3.5 text-xs text-slate-500 max-w-[240px] truncate" title="${details}">${details}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch { showToast('Error loading logs', '#dc2626'); }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const stored = localStorage.getItem('admin') || sessionStorage.getItem('admin');
+  if (!stored || !getToken()) { window.location.href = '/login'; return; }
+  adminUser = JSON.parse(stored);
+  adminUser = JSON.parse(stored);
+  if (adminUser.role !== 'super_admin') { window.location.href = '/admin'; return; }
+  document.getElementById('adminInfo').textContent = adminUser.name + ' (Super Admin)';
+  loadAdmins();
+});
+</script>
+<script src="/register-sw.js"></script>
+</body>
+</html>

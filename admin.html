@@ -1,0 +1,2787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#296F35" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Directory" />
+  <title>Admin Panel - Compass Directory</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand: { 50:'#eaf7ec', 100:'#c2e6c8', 200:'#9bd5a3', 500:'#3a8a4a', 600:'#296F35', 700:'#1e5929', 900:'#0f3315' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .modal-enter { animation: modalIn 0.2s ease-out; }
+    @keyframes modalIn { from { opacity: 0; transform: scale(0.97) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(100px); } to { opacity: 1; transform: translateX(0); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .toast-in { animation: slideIn 0.3s ease-out; }
+    .fade-in { animation: fadeIn 0.2s ease; }
+    .row-pending-delete { background-color: #fef2f2 !important; }
+    .row-pending-delete td { border-bottom-color: #fecaca; }
+    .row-pending-delete:hover { background-color: #fee2e2 !important; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    .input-focus { transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+    .input-focus:focus { border-color: #296F35; box-shadow: 0 0 0 3px rgba(41,111,53,0.12); }
+    .tab-btn { transition: all 0.2s ease; }
+    @media (prefers-reduced-motion: reduce) { .modal-enter, .toast-in, .fade-in { animation: none; } }
+  </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+<header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6">
+    <div class="flex items-center justify-between h-16">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="/logo.png" alt="Compass Avaya Directory" class="h-12 w-auto rounded-lg shrink-0" />
+        <div class="min-w-0">
+          <h1 class="text-lg font-bold text-slate-800 leading-tight">Admin Panel</h1>
+          <p class="text-brand-600 text-xs font-medium">Manage Employee Directory</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <span id="adminInfo" class="text-slate-500 hidden sm:inline"></span>
+        <span id="empCount" class="text-slate-400 font-medium"></span>
+        <a href="/" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors font-medium">Directory</a>
+        <button onclick="logout()" class="px-3.5 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition-colors font-medium cursor-pointer">Logout</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+  <div class="flex gap-2 mb-6 p-1 bg-white rounded-2xl shadow-sm border border-slate-200/80 inline-flex flex-wrap">
+    <button id="tabEmployees" onclick="showAdminTab('employees')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl bg-brand-600 text-white cursor-pointer">Employees</button>
+    <button id="tabRecent" onclick="showAdminTab('recent')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Recent Data</button>
+    <button id="tabDepartments" onclick="showAdminTab('departments')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Departments</button>
+    <button id="tabBranches" onclick="showAdminTab('branches')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Countries & Locations</button>
+    <button id="tabStations" onclick="showAdminTab('stations')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Station Tels</button>
+    <button id="tabAccess" onclick="showAdminTab('access')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Access Control</button>
+  </div>
+
+  <div id="panelEmployees">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
+      <div class="flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-48 relative">
+          <svg class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <input id="searchInput" type="text" placeholder="Search employees..."
+            class="input-focus w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50/50 focus:outline-none" />
+        </div>
+        <select id="branchFilter" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+          <option value="">All Countries</option>
+        </select>
+        <select id="worksForFilter" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+          <option value="">Works for: Any</option>
+        </select>
+        <select id="createdFilter" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+          <option value="">Created: Any</option>
+          <option value="week">Created: Last Week</option>
+          <option value="month">Created: Last Month</option>
+        </select>
+        <select id="updatedFilter" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+          <option value="">Updated: Any</option>
+          <option value="week">Updated: Last Week</option>
+          <option value="month">Updated: Last Month</option>
+        </select>
+        <button onclick="openExportModal()" class="px-4 py-2.5 text-sm bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 border border-slate-200 active:scale-[0.97]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Export
+        </button>
+        <button onclick="downloadImportTemplate()" class="px-4 py-2.5 text-sm bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 border border-slate-200 active:scale-[0.97]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Template
+        </button>
+        <button onclick="openImportModal()" class="px-4 py-2.5 text-sm bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 border border-slate-200 active:scale-[0.97]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L9 8m4-4v12"/></svg>
+          Import
+        </button>
+        <button onclick="openAddModal()" class="px-4 py-2.5 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 shadow-sm shadow-brand-600/20 active:scale-[0.97]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+          Add Employee
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/80">
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">
+                <button type="button" onclick="sortEmployees('name')" class="inline-flex items-center gap-1.5 hover:text-brand-600 cursor-pointer select-none">
+                  Name
+                  <span id="sortIcon-name" class="sort-icon text-slate-300">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg>
+                  </span>
+                </button>
+              </th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Email</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Dept</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Works for</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Branch</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">
+                <button type="button" onclick="sortEmployees('ext')" class="inline-flex items-center gap-1.5 hover:text-brand-600 cursor-pointer select-none">
+                  Extension
+                  <span id="sortIcon-ext" class="sort-icon text-slate-300">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg>
+                  </span>
+                </button>
+              </th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Mobile</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider whitespace-nowrap">Created</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider whitespace-nowrap">Updated</th>
+              <th class="text-right px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="empTable" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="hidden text-center py-16 text-slate-400">
+        <svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="font-medium">No employees found</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="panelRecent" class="hidden">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
+      <div class="flex flex-wrap gap-3 items-center">
+        <h2 class="text-lg font-bold text-slate-800 mr-2">Recent Changes</h2>
+        <select id="recentTypeFilter" onchange="loadRecent()" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+          <option value="all">All Changes</option>
+          <option value="created">Created</option>
+          <option value="updated">Updated</option>
+          <option value="deleted">Deleted</option>
+        </select>
+        <select id="recentDaysFilter" onchange="loadRecent()" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+        </select>
+        <span id="recentCount" class="text-xs text-slate-400 font-medium ml-auto"></span>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/80">
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Change</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Name</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Dept</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Branch</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Extension</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider whitespace-nowrap">When</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">By</th>
+            </tr>
+          </thead>
+          <tbody id="recentTable" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <div id="recentEmpty" class="hidden text-center py-16 text-slate-400">
+        <svg class="w-12 h-12 mx-auto mb-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="font-medium">No recent changes</p>
+        <p class="text-sm mt-1">Try a wider date range or different filter</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="panelDepartments" class="hidden">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
+      <div class="flex flex-wrap gap-3 items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">Departments</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Add or rename departments used when creating employees and in the import template</p>
+        </div>
+        <button onclick="openDeptModal()" class="px-4 py-2.5 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+          Add Department
+        </button>
+      </div>
+    </div>
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/80">
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Department</th>
+              <th class="text-left px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Employees</th>
+              <th class="text-right px-4 py-3.5 font-semibold text-slate-600 text-xs uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="deptTable" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <div id="deptEmpty" class="hidden text-center py-16 text-slate-400">
+        <p class="font-medium">No departments yet</p>
+        <p class="text-sm mt-1">Add a department to use it on employees</p>
+      </div>
+    </div>
+  </div>
+
+  <div id="panelBranches" class="hidden">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
+      <div class="flex flex-wrap gap-3 items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">Countries & Locations</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Country → State → Company. Add states within a country, and companies/sites within each state</p>
+        </div>
+        <button onclick="openBranchModal()" class="px-4 py-2.5 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+          Add Country
+        </button>
+      </div>
+    </div>
+    <div id="branchCards" class="space-y-4"></div>
+    <div id="branchEmpty" class="hidden text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-200/80">
+      <p class="font-medium">No countries yet</p>
+    </div>
+  </div>
+
+  <div id="panelStations" class="hidden">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
+      <div class="flex flex-wrap gap-3 items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">Station Tels</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Pick country → state → company, then add phone numbers for that site</p>
+        </div>
+        <button onclick="openStationModal()" class="px-4 py-2.5 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shadow-sm active:scale-[0.97]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+          Add Station Number
+        </button>
+      </div>
+    </div>
+    <div id="stationCards" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+    <div id="stationEmpty" class="hidden text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-200/80">
+      <p class="font-medium">No station numbers yet</p>
+      <p class="text-sm mt-1">Add a station number to create its card</p>
+    </div>
+  </div>
+
+  <div id="panelAccess" class="hidden">
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
+      <h2 class="text-lg font-bold text-slate-800">Public directory access</h2>
+      <p class="text-xs text-slate-400 mt-0.5">Office IPs open the directory freely. All other visitors must enter a passcode. Until you add at least one IP or passcode, the directory stays open to everyone.</p>
+      <p class="text-sm text-slate-600 mt-3">Your current IP: <span id="accessClientIp" class="font-mono font-semibold text-brand-700">…</span>
+        <button type="button" onclick="refreshCurrentIp()" class="ml-2 text-xs font-semibold text-brand-600 hover:underline cursor-pointer">Refresh IP</button>
+        <button type="button" onclick="addCurrentIp()" class="ml-2 text-xs font-semibold text-brand-600 hover:underline cursor-pointer">Add this IP</button>
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-slate-800">Allowed office IPs</h3>
+            <p class="text-xs text-slate-400 mt-0.5">Static public IPs of office networks</p>
+          </div>
+          <button type="button" onclick="openIpModal()" class="px-3 py-2 text-xs bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer">Add IP</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-100 bg-slate-50/80">
+                <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">IP</th>
+                <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Label</th>
+                <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Status</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="accessIpTable" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="accessIpEmpty" class="hidden text-center py-10 text-slate-400 text-sm">No office IPs yet</div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+        <div class="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-slate-800">Passcodes</h3>
+            <p class="text-xs text-slate-400 mt-0.5">For users outside office IPs</p>
+          </div>
+          <button type="button" onclick="openPasscodeModal()" class="px-3 py-2 text-xs bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer">Add passcode</button>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-slate-100 bg-slate-50/80">
+                <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Label</th>
+                <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Valid for</th>
+                <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Status</th>
+                <th class="text-right px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="accessPasscodeTable" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+        <div id="accessPasscodeEmpty" class="hidden text-center py-10 text-slate-400 text-sm">No passcodes yet</div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden mt-6">
+      <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap gap-3 items-center justify-between">
+        <div>
+          <h3 class="font-bold text-slate-800">User access logs</h3>
+          <p class="text-xs text-slate-400 mt-0.5">Auto-detected visitor IP from each person’s browser</p>
+        </div>
+        <div class="flex flex-wrap gap-2 items-center">
+          <span id="accessLogCount" class="text-xs text-slate-400 mr-1"></span>
+          <select id="accessLogActionFilter" onchange="loadAccessLogs()" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm focus:outline-none cursor-pointer">
+            <option value="">All actions</option>
+            <option value="unlock_ok">Unlock success</option>
+            <option value="unlock_fail">Unlock failed</option>
+            <option value="office_ip">Office IP open</option>
+          </select>
+          <select id="accessLogDaysFilter" onchange="loadAccessLogs()" class="input-focus border border-slate-200 bg-white rounded-xl px-3 py-2 text-sm focus:outline-none cursor-pointer">
+            <option value="1">Last 24 hours</option>
+            <option value="7" selected>Last 7 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <button type="button" onclick="loadAccessLogs()" class="px-3 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 cursor-pointer">Refresh</button>
+        </div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-slate-100 bg-slate-50/80">
+              <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">When</th>
+              <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Action</th>
+              <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">IP</th>
+              <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Passcode</th>
+              <th class="text-left px-4 py-3 font-semibold text-slate-600 text-xs uppercase">Details</th>
+            </tr>
+          </thead>
+          <tbody id="accessLogTable" class="divide-y divide-slate-100"></tbody>
+        </table>
+      </div>
+      <div id="accessLogEmpty" class="hidden text-center py-10 text-slate-400 text-sm">No access logs in this range</div>
+    </div>
+  </div>
+</main>
+
+<div id="empModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeEmpModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="empModalTitle" class="text-lg font-bold text-slate-800">Add Employee</h2>
+      <button onclick="closeEmpModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="empForm" onsubmit="handleEmpSubmit(event)">
+      <input type="hidden" id="empId" />
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Name *</label>
+        <input id="empName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" />
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Email</label>
+        <input id="empEmail" type="email" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="name@compasslog.com" />
+      </div>
+      <div class="grid grid-cols-2 gap-4 mb-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">State / Country *</label>
+          <select id="empPlace" required onchange="onEmpPlaceChange()" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white"><option value="">Select (e.g. Dammam, Qatar)</option></select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Company / location *</label>
+          <select id="empLocation" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white"><option value="">Select Company</option></select>
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Department *</label>
+        <select id="empDept" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white"><option value="">Select Department</option></select>
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Works for station</label>
+        <select id="empWorksFor" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+          <option value="">— None (owns their own site) —</option>
+        </select>
+        <p class="mt-1.5 text-[11px] text-slate-400">For backoffice staff who support Dubai / Dammam / Jeddah / Qatar, etc. Leave blank if they only work at their selected location.</p>
+      </div>
+      <div id="empExtSection" class="border-t border-slate-100 pt-5 mt-5">
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Extension Details</p>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div><label class="block text-xs text-slate-500 mb-1">Extension</label><input id="empExt" class="input-focus w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+          <div><label class="block text-xs text-slate-500 mb-1">Mobile</label><input id="empMobile" class="input-focus w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div><label class="block text-xs text-slate-500 mb-1">Direct Line</label><input id="empSD" class="input-focus w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+          <div><label class="block text-xs text-slate-500 mb-1">Speed Dial</label><input id="empSDNo" class="input-focus w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+        </div>
+      </div>
+      <p id="empExtHint" class="hidden mt-4 text-xs text-slate-400">To add, edit, or remove phone lines, use the <span class="font-semibold text-slate-600">Manage Extensions</span> button on the row.</p>
+      <div id="empError" class="hidden mt-4 p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3 mt-5">
+        <button type="button" onclick="closeEmpModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer active:scale-[0.98]">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="extModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeExtModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 modal-enter p-6 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-lg font-bold text-slate-800">Manage Extensions</h2>
+        <p id="extEmpName" class="text-sm text-slate-500 mt-0.5 font-medium"></p>
+      </div>
+      <button onclick="closeExtModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div id="extList" class="space-y-2 mb-5"></div>
+
+    <div class="border-t border-slate-100 pt-5">
+      <p id="extFormTitle" class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Add Extension</p>
+      <form id="extForm" onsubmit="handleExtSubmit(event)">
+        <input type="hidden" id="extEmpId" />
+        <input type="hidden" id="extEditIdx" value="" />
+        <div class="space-y-3 mb-4">
+          <div><label class="block text-xs font-semibold text-slate-600 mb-1">Extension</label><input id="extExt" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+          <div><label class="block text-xs font-semibold text-slate-600 mb-1">Mobile</label><input id="extMobile" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="block text-xs font-semibold text-slate-600 mb-1">Direct Line</label><input id="extSD" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+            <div><label class="block text-xs font-semibold text-slate-600 mb-1">Speed Dial</label><input id="extSDNo" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" /></div>
+          </div>
+          <p class="text-[11px] text-slate-400">Label is set automatically (Ext 1, Ext 2, …)</p>
+        </div>
+        <div id="extError" class="hidden mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+        <div class="flex gap-3">
+          <button type="button" id="extCancelEditBtn" onclick="resetExtForm()" class="hidden flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors cursor-pointer">Cancel Edit</button>
+          <button type="submit" id="extSubmitBtn" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer active:scale-[0.98]">Add Extension</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="hidden fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold toast-in"></div>
+
+<div id="importModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeImportModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h2 class="text-lg font-bold text-slate-800">Import Employees</h2>
+        <p class="text-xs text-slate-400 mt-0.5">Upload the filled Excel template — existing rows are updated, new ones are added</p>
+      </div>
+      <button onclick="closeImportModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="mb-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
+      <p>1. Download <button type="button" onclick="downloadImportTemplate()" class="text-brand-600 font-semibold hover:underline cursor-pointer">Template</button></p>
+      <p>2. Fill Name, Email, Dept, then <strong>State/Country</strong> (Dammam, Qatar, …) and Company. Ext 1 / Ext 2 / Mobile etc.</p>
+      <p>3. Match order: <strong>ID</strong> → <strong>Email</strong> → Name + Location (updates if found)</p>
+      <p>Country is automatic (Dammam → KSA, Qatar → Qatar). Labels are Ext 1 / Ext 2.</p>
+    </div>
+    <label class="flex flex-col items-center justify-center gap-2 px-4 py-8 border-2 border-dashed border-slate-200 rounded-2xl cursor-pointer hover:border-brand-400 hover:bg-brand-50/40 transition-colors mb-4">
+      <svg class="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+      <span id="importFileLabel" class="text-sm font-medium text-slate-600">Choose Excel file (.xlsx / .xls / .csv)</span>
+      <input id="importFile" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" class="hidden" onchange="onImportFileSelected(event)" />
+    </label>
+    <div id="importPreview" class="hidden mb-4 text-xs text-slate-500 font-medium"></div>
+    <div id="importError" class="hidden mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+    <div id="importResult" class="hidden mb-4 p-3 bg-brand-50 border border-brand-200 rounded-xl text-brand-800 text-sm"></div>
+    <div class="flex gap-3">
+      <button type="button" onclick="closeImportModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
+      <button type="button" id="importBtn" onclick="runImport()" disabled class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer active:scale-[0.98]">Import</button>
+    </div>
+  </div>
+</div>
+
+<div id="exportModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeExportModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h2 class="text-lg font-bold text-slate-800">Export Employees</h2>
+        <p id="exportFilterHint" class="text-xs text-slate-400 mt-0.5">Uses your current filters</p>
+      </div>
+      <button onclick="closeExportModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="mb-5">
+      <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">Format</p>
+      <div class="flex gap-3">
+        <label class="flex-1 flex items-center gap-2.5 px-3.5 py-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="radio" name="exportFormat" value="excel" checked class="text-brand-600 focus:ring-brand-500" />
+          <span class="text-sm font-semibold text-slate-700">Excel (.xlsx)</span>
+        </label>
+        <label class="flex-1 flex items-center gap-2.5 px-3.5 py-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
+          <input type="radio" name="exportFormat" value="pdf" class="text-brand-600 focus:ring-brand-500" />
+          <span class="text-sm font-semibold text-slate-700">PDF</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="mb-5">
+      <div class="flex items-center justify-between mb-2.5">
+        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Columns</p>
+        <div class="flex gap-3 text-xs">
+          <button type="button" onclick="setExportColumns(true)" class="text-brand-600 hover:underline cursor-pointer font-medium">Select all</button>
+          <button type="button" onclick="setExportColumns(false)" class="text-slate-400 hover:underline cursor-pointer font-medium">Clear</button>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-2" id="exportColumns">
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="name" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Name</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="email" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Email</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="dept" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Department</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="works_for_station" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Works for station</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="branch" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Branch</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="ext" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Extension</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="mobile" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Mobile</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="sd" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Direct Line</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="sdNo" checked class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Speed Dial</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="label" class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Line Label</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="created" class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Created</span></label>
+        <label class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 cursor-pointer"><input type="checkbox" value="updated" class="export-col rounded border-slate-300 text-brand-600 focus:ring-brand-500" /><span class="text-sm text-slate-700">Updated</span></label>
+      </div>
+    </div>
+
+    <p id="exportCount" class="text-xs text-slate-400 mb-4 font-medium"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="closeExportModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
+      <button type="button" onclick="runExport()" id="exportBtn" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer active:scale-[0.98]">Download</button>
+    </div>
+  </div>
+</div>
+
+<div id="deptModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeDeptModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="deptModalTitle" class="text-lg font-bold text-slate-800">Add Department</h2>
+      <button onclick="closeDeptModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"><svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="deptForm" onsubmit="handleDeptSubmit(event)">
+      <input type="hidden" id="deptId" />
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Department name *</label>
+        <input id="deptName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. Operations, Finance, IT" />
+      </div>
+      <div id="deptError" class="hidden mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3">
+        <button type="button" onclick="closeDeptModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="ipModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeIpModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="ipModalTitle" class="text-lg font-bold text-slate-800">Add office IP</h2>
+      <button onclick="closeIpModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"><svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="ipForm" onsubmit="handleIpSubmit(event)">
+      <input type="hidden" id="ipId" />
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">IP address *</label>
+        <input id="ipAddress" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white font-mono" placeholder="e.g. 203.0.113.10" />
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Label</label>
+        <input id="ipLabel" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. Dubai HQ, Bangalore office" />
+      </div>
+      <label class="flex items-center gap-2 mb-4 cursor-pointer">
+        <input type="checkbox" id="ipActive" checked class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+        <span class="text-sm text-slate-700">Active</span>
+      </label>
+      <div id="ipError" class="hidden mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3">
+        <button type="button" onclick="closeIpModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="passcodeModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closePasscodeModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="passcodeModalTitle" class="text-lg font-bold text-slate-800">Add passcode</h2>
+      <button onclick="closePasscodeModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"><svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="passcodeForm" onsubmit="handlePasscodeSubmit(event)">
+      <input type="hidden" id="passcodeId" />
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Label</label>
+        <input id="passcodeLabel" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. Guest / WFH access" />
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5" id="passcodeValueLabel">Passcode *</label>
+        <input id="passcodeValue" type="text" autocomplete="off" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white font-mono" placeholder="Min 4 characters" />
+        <p id="passcodeHint" class="hidden text-xs text-slate-400 mt-1">Leave blank to keep the current passcode</p>
+      </div>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Access lasts for *</label>
+        <div class="flex gap-2">
+          <input id="passcodeDurationAmount" type="number" min="1" max="999999" value="7" required class="input-focus w-28 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" />
+          <select id="passcodeDurationUnit" class="input-focus flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="seconds">Seconds (for testing)</option>
+            <option value="days" selected>Days</option>
+            <option value="months">Months</option>
+          </select>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">How long after entering this passcode before it is asked again</p>
+      </div>
+      <label class="flex items-center gap-2 mb-4 cursor-pointer">
+        <input type="checkbox" id="passcodeActive" checked class="rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+        <span class="text-sm text-slate-700">Active</span>
+      </label>
+      <div id="passcodeError" class="hidden mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3">
+        <button type="button" onclick="closePasscodeModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="branchModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeBranchModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="branchModalTitle" class="text-lg font-bold text-slate-800">Add Country</h2>
+      <button onclick="closeBranchModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"><svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="branchForm" onsubmit="handleBranchSubmit(event)">
+      <input type="hidden" id="branchId" />
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">Country name *</label>
+        <input id="branchName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. UAE, KSA, India" />
+      </div>
+      <div id="branchError" class="hidden mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3">
+        <button type="button" onclick="closeBranchModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="stateModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeStateModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="stateModalTitle" class="text-lg font-bold text-slate-800">Add State</h2>
+      <button onclick="closeStateModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"><svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="stateForm" onsubmit="handleStateSubmit(event)">
+      <input type="hidden" id="stateId" />
+      <input type="hidden" id="stateCountryId" />
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-slate-600 mb-1.5">State name *</label>
+        <input id="stateName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. Dammam, Bangalore (use Main if none)" />
+      </div>
+      <div id="stateError" class="hidden mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3">
+        <button type="button" onclick="closeStateModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="locationModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeLocationModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="locationModalTitle" class="text-lg font-bold text-slate-800">Add Company</h2>
+      <button onclick="closeLocationModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer"><svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+    </div>
+    <form id="locationForm" onsubmit="handleLocationSubmit(event)">
+      <input type="hidden" id="locationId" />
+      <input type="hidden" id="locationStateId" />
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Company / location name *</label>
+          <input id="locationName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. CLI India, Warehouse, Port" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">City / area</label>
+          <input id="locationCity" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. Bangalore" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Address</label>
+          <textarea id="locationAddress" rows="2" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white resize-none"></textarea>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Google Maps link</label>
+          <input id="locationMapsUrl" type="url" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="https://maps.google.com/..." />
+        </div>
+      </div>
+      <div id="locationError" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3 mt-5">
+        <button type="button" onclick="closeLocationModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl cursor-pointer">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="stationModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeStationModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md z-10 modal-enter p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h2 id="stationModalTitle" class="text-lg font-bold text-slate-800">Add Station Number</h2>
+      <button onclick="closeStationModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer transition-colors">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="stationForm" onsubmit="handleStationSubmit(event)">
+      <input type="hidden" id="stationId" />
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Country *</label>
+          <select id="stationBranch" required onchange="onStationBranchChange()" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="">Select Country</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">State</label>
+          <select id="stationState" onchange="onStationStateChange()" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="">Select State</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Location / company *</label>
+          <select id="stationLocation" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="">Select Location</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Type *</label>
+          <select id="stationType" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+            <option value="tel">Tel</option>
+            <option value="internet">Internet</option>
+            <option value="both">Tel + Internet (same number)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Label</label>
+          <input id="stationLabel" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="e.g. Main, Reception" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Phone *</label>
+          <input id="stationPhone" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" placeholder="+971 4 ..." />
+        </div>
+        <label class="flex items-center gap-2.5 cursor-pointer select-none">
+          <input id="stationPrimary" type="checkbox" class="w-4 h-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+          <span class="text-sm text-slate-700">Primary <span class="text-slate-400">(visible on public directory)</span></span>
+        </label>
+        <p class="text-[11px] text-slate-400">Address &amp; maps are edited on the location (Countries &amp; Locations tab)</p>
+      </div>
+      <div id="stationError" class="hidden mt-4 p-3.5 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm font-medium"></div>
+      <div class="flex gap-3 mt-5">
+        <button type="button" onclick="closeStationModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl transition-colors cursor-pointer">Cancel</button>
+        <button type="submit" class="flex-1 py-2.5 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer active:scale-[0.98]">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+let employees = [];
+let adminUser = null;
+
+function getToken() { return localStorage.getItem('token') || sessionStorage.getItem('token'); }
+function getAdmin() { return JSON.parse(localStorage.getItem('admin') || sessionStorage.getItem('admin') || '{}'); }
+function getHeaders() {
+  const h = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() };
+  if (browserPublicIp) h['X-Client-Public-Ip'] = browserPublicIp;
+  return h;
+}
+
+let browserPublicIp = '';
+
+async function detectBrowserPublicIp(forceRefresh = true) {
+  const urls = ['https://api.ipify.org?format=json', 'https://api64.ipify.org?format=json'];
+  if (!forceRefresh && browserPublicIp) return browserPublicIp;
+  for (const url of urls) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const res = await fetch(url + (url.includes('?') ? '&' : '?') + '_=' + Date.now(), {
+        signal: ctrl.signal,
+        cache: 'no-store',
+      });
+      clearTimeout(t);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const ip = String(data.ip || '').trim();
+      if (ip) {
+        browserPublicIp = ip;
+        sessionStorage.setItem('browserPublicIp', ip);
+        return ip;
+      }
+    } catch (_) { /* try next */ }
+  }
+  return browserPublicIp || sessionStorage.getItem('browserPublicIp') || '';
+}
+
+async function refreshCurrentIp() {
+  const el = document.getElementById('accessClientIp');
+  if (el) el.textContent = 'checking…';
+  browserPublicIp = '';
+  sessionStorage.removeItem('browserPublicIp');
+  await loadAccessControl();
+  showToast(accessClientIp ? ('IP updated: ' + accessClientIp) : 'Could not detect IP', accessClientIp ? '#296F35' : '#dc2626');
+}
+
+function formatDate(d) {
+  if (!d) return '-';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'2-digit' });
+}
+
+function formatDateTime(d) {
+  if (!d) return '-';
+  return new Date(d).toLocaleString('en-GB', { day:'2-digit', month:'short', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function showAdminTab(tab) {
+  document.getElementById('panelEmployees').classList.toggle('hidden', tab !== 'employees');
+  document.getElementById('panelRecent').classList.toggle('hidden', tab !== 'recent');
+  document.getElementById('panelDepartments').classList.toggle('hidden', tab !== 'departments');
+  document.getElementById('panelBranches').classList.toggle('hidden', tab !== 'branches');
+  document.getElementById('panelStations').classList.toggle('hidden', tab !== 'stations');
+  document.getElementById('panelAccess').classList.toggle('hidden', tab !== 'access');
+  const active = 'tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl bg-brand-600 text-white cursor-pointer';
+  const inactive = 'tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer';
+  document.getElementById('tabEmployees').className = tab === 'employees' ? active : inactive;
+  document.getElementById('tabRecent').className = tab === 'recent' ? active : inactive;
+  document.getElementById('tabDepartments').className = tab === 'departments' ? active : inactive;
+  document.getElementById('tabBranches').className = tab === 'branches' ? active : inactive;
+  document.getElementById('tabStations').className = tab === 'stations' ? active : inactive;
+  document.getElementById('tabAccess').className = tab === 'access' ? active : inactive;
+  if (tab === 'recent') loadRecent();
+  if (tab === 'departments') loadDepartments();
+  if (tab === 'branches') loadBranchesLocations();
+  if (tab === 'stations') loadStations();
+  if (tab === 'access') { loadAccessControl(); loadAccessLogs(); }
+}
+
+async function loadRecent() {
+  const type = document.getElementById('recentTypeFilter').value;
+  const days = document.getElementById('recentDaysFilter').value;
+  const params = new URLSearchParams({ type, days });
+  try {
+    const res = await fetch('/api/employees/recent?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (res.status === 401) { logout(); return; }
+    const rows = await res.json();
+    renderRecent(rows);
+  } catch { showToast('Failed to load recent data', '#dc2626'); }
+}
+
+function renderRecent(rows) {
+  const tbody = document.getElementById('recentTable');
+  const empty = document.getElementById('recentEmpty');
+  tbody.innerHTML = '';
+  document.getElementById('recentCount').textContent = rows.length ? rows.length + ' changes' : '';
+
+  if (!rows.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  const badges = {
+    created: 'bg-green-100 text-green-700',
+    updated: 'bg-blue-100 text-blue-700',
+    deleted: 'bg-red-100 text-red-700',
+  };
+
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.className = (r.change_type === 'deleted' ? 'bg-red-50/40 ' : '') + 'hover:bg-slate-50 transition-colors';
+    tr.innerHTML = `
+      <td class="px-4 py-3.5">
+        <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${badges[r.change_type] || 'bg-slate-100 text-slate-700'}">${r.change_type}</span>
+      </td>
+      <td class="px-4 py-3.5 font-semibold text-slate-800 ${r.change_type === 'deleted' ? 'line-through text-slate-500' : ''}">${r.name}</td>
+      <td class="px-4 py-3.5 text-slate-600">${r.dept}</td>
+      <td class="px-4 py-3.5"><span class="text-xs font-medium text-slate-500 bg-slate-100 rounded-lg px-2 py-1">${r.branch}</span></td>
+      <td class="px-4 py-3.5 font-mono text-slate-700">${r.extensions || '-'}</td>
+      <td class="px-4 py-3.5 text-xs text-slate-400 whitespace-nowrap">${formatDateTime(r.change_at)}</td>
+      <td class="px-4 py-3.5 text-xs text-slate-600">${r.change_by_name || '-'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function logout() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('admin');
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('admin');
+  window.location.href = '/login';
+}
+
+async function loadEmployees() {
+  const params = new URLSearchParams();
+  const bf = document.getElementById('branchFilter').value;
+  const wf = document.getElementById('worksForFilter')?.value || '';
+  const cf = document.getElementById('createdFilter').value;
+  const uf = document.getElementById('updatedFilter').value;
+  const sq = document.getElementById('searchInput').value.trim();
+  if (bf) params.set('branch', bf);
+  if (wf) params.set('works_for_station', wf);
+  if (cf) params.set('date_filter', cf);
+  if (uf) params.set('updated_filter', uf);
+  if (sq) params.set('search', sq);
+  const reqId = ++loadEmployees._reqId;
+  try {
+    const res = await fetch('/api/employees?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (reqId !== loadEmployees._reqId) return;
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'Failed to load', '#dc2626');
+      return;
+    }
+    const data = await res.json();
+    if (reqId !== loadEmployees._reqId) return;
+    if (!Array.isArray(data)) { showToast('Failed to load', '#dc2626'); return; }
+    employees = data;
+    applyEmployeeSort();
+    renderTable(employees);
+    updateSortIcons();
+    populateWorksForFilter();
+    document.getElementById('empCount').textContent = employees.length + ' emp';
+  } catch (e) {
+    if (reqId !== loadEmployees._reqId) return;
+    showToast('Failed to load', '#dc2626');
+  }
+}
+loadEmployees._reqId = 0;
+
+let sortState = { key: 'name', dir: 'asc' };
+
+function getPrimaryExt(emp) {
+  const nums = emp.numbers || [];
+  const ext = nums.map(n => n.ext).filter(Boolean)[0] || '';
+  return ext;
+}
+
+function sortEmployees(key) {
+  if (sortState.key === key) {
+    sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortState.key = key;
+    sortState.dir = 'asc';
+  }
+  applyEmployeeSort();
+  renderTable(employees);
+  updateSortIcons();
+}
+
+function applyEmployeeSort() {
+  const dir = sortState.dir === 'asc' ? 1 : -1;
+  employees.sort((a, b) => {
+    let av, bv;
+    if (sortState.key === 'ext') {
+      av = getPrimaryExt(a);
+      bv = getPrimaryExt(b);
+      const an = parseInt(av, 10);
+      const bn = parseInt(bv, 10);
+      if (!isNaN(an) && !isNaN(bn) && String(an) === av && String(bn) === bv) {
+        return (an - bn) * dir;
+      }
+    } else {
+      av = (a.name || '');
+      bv = (b.name || '');
+    }
+    return String(av).localeCompare(String(bv), undefined, { sensitivity: 'base', numeric: true }) * dir;
+  });
+}
+
+function updateSortIcons() {
+  const inactive = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 9l4-4 4 4M8 15l4 4 4-4"/></svg>`;
+  const up = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 15l7-7 7 7"/></svg>`;
+  const down = `<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>`;
+  ['name', 'ext'].forEach(key => {
+    const el = document.getElementById('sortIcon-' + key);
+    if (!el) return;
+    if (sortState.key !== key) {
+      el.className = 'sort-icon text-slate-300';
+      el.innerHTML = inactive;
+    } else {
+      el.className = 'sort-icon text-brand-600';
+      el.innerHTML = sortState.dir === 'asc' ? up : down;
+    }
+  });
+}
+
+function branchCellLabel(emp) {
+  const parts = [emp.branch];
+  if (emp.state_name && emp.state_name !== 'Main') parts.push(emp.state_name);
+  const company = emp.station_name || emp.location_name;
+  if (company && company !== 'Main') parts.push(company);
+  return parts.filter(Boolean).join(' · ');
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('empTable');
+  const empty = document.getElementById('emptyState');
+  tbody.innerHTML = '';
+  if (!data.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  data.forEach(emp => {
+    const nums = emp.numbers || [{ ext: '', mobile: '', sd: '', sdNo: '' }];
+    const exts = nums.map(n => n.ext).filter(Boolean).join(' / ') || '-';
+    const mobiles = nums.map(n => n.mobile).filter(Boolean).join(', ') || '-';
+    const isPending = emp.delete_requested_by && !emp.deleted_at;
+    const isMyRequest = isPending && emp.delete_requested_by === adminUser.id;
+
+    const tr = document.createElement('tr');
+    tr.className = (isPending ? 'row-pending-delete' : 'hover:bg-slate-50') + ' transition-colors';
+
+    const statusBadge = isPending
+      ? `<span class="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-100 rounded-full px-2.5 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+          ${isMyRequest ? 'Your request' : 'Pending'}
+         </span>`
+      : '';
+
+    const editDisabled = isPending ? 'disabled opacity-30 pointer-events-none' : '';
+    const extDisabled = isPending ? 'disabled opacity-30 pointer-events-none' : '';
+
+    let deleteBtn = '';
+    const cancelBtn = isPending
+      ? `<button onclick="cancelDelete(${emp.id})" class="p-1.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-lg cursor-pointer" title="Cancel delete request">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>`
+      : '';
+
+    if (isMyRequest) {
+      deleteBtn = `<button disabled class="p-1.5 text-slate-300 cursor-not-allowed" title="Another admin must confirm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>${cancelBtn}`;
+    } else if (isPending) {
+      deleteBtn = `<button onclick="confirmDelete(${emp.id})" class="p-1.5 text-red-600 hover:bg-red-50 rounded-lg cursor-pointer" title="Confirm delete">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>${cancelBtn}`;
+    } else {
+      deleteBtn = `<button onclick="requestDelete(${emp.id})" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer" title="Request delete">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </button>`;
+    }
+
+    tr.innerHTML = `
+      <td class="px-4 py-3.5">
+        <div class="flex items-center gap-2.5">
+          <span class="font-semibold text-slate-800">${emp.name}</span>
+          ${statusBadge}
+        </div>
+      </td>
+      <td class="px-4 py-3.5 text-slate-600 text-xs">${emp.email ? `<a href="mailto:${emp.email}" class="text-brand-600 hover:underline">${emp.email}</a>` : '<span class="text-slate-300">—</span>'}</td>
+      <td class="px-4 py-3.5 text-slate-600">${emp.dept}</td>
+      <td class="px-4 py-3.5">${emp.works_for_station
+        ? `<span class="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">${emp.works_for_station}</span>`
+        : `<span class="text-slate-300">—</span>`}</td>
+      <td class="px-4 py-3.5"><span class="text-xs font-medium text-slate-500 bg-slate-100 rounded-lg px-2 py-1">${branchCellLabel(emp)}</span></td>
+      <td class="px-4 py-3.5 font-mono text-slate-700">${exts}</td>
+      <td class="px-4 py-3.5 text-slate-600 text-xs">${mobiles}</td>
+      <td class="px-4 py-3.5 text-xs text-slate-400">${formatDate(emp.created_at)}</td>
+      <td class="px-4 py-3.5 text-xs text-slate-400">${formatDate(emp.updated_at)}</td>
+      <td class="px-4 py-3.5">
+        <div class="flex items-center justify-end gap-1">
+          <button onclick="openEditModal(${emp.id})" ${editDisabled} class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer transition-colors" title="Edit">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          </button>
+          <button onclick="openExtModal(${emp.id})" ${extDisabled} class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer transition-colors" title="Manage Extensions">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10M4 18h7"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l2 2 4-4"/></svg>
+          </button>
+          ${deleteBtn}
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function openAddModal() {
+  document.getElementById('empModalTitle').textContent = 'Add Employee';
+  document.getElementById('empId').value = '';
+  document.getElementById('empForm').reset();
+  document.getElementById('empError').classList.add('hidden');
+  document.getElementById('empExtSection').classList.remove('hidden');
+  document.getElementById('empExtHint').classList.add('hidden');
+  populateEmpPlaces();
+  populateEmpDepartments();
+  populateEmpWorksFor();
+  populateEmpLocationsForPlace();
+  document.getElementById('empModal').classList.remove('hidden');
+}
+
+function openEditModal(id) {
+  const emp = employees.find(e => e.id === id);
+  if (!emp || emp.delete_requested_by) return;
+  document.getElementById('empModalTitle').textContent = 'Edit Employee';
+  document.getElementById('empId').value = emp.id;
+  document.getElementById('empName').value = emp.name;
+  document.getElementById('empEmail').value = emp.email || '';
+  populateEmpPlaces(emp.state_id);
+  populateEmpDepartments(emp.dept);
+  populateEmpWorksFor(emp.works_for_station);
+  populateEmpLocationsForPlace(emp.location_id);
+  document.getElementById('empExtSection').classList.add('hidden');
+  document.getElementById('empExtHint').classList.remove('hidden');
+  document.getElementById('empError').classList.add('hidden');
+  document.getElementById('empModal').classList.remove('hidden');
+}
+
+function closeEmpModal() { document.getElementById('empModal').classList.add('hidden'); }
+
+async function handleEmpSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('empId').value;
+  const body = {
+    name: document.getElementById('empName').value,
+    email: document.getElementById('empEmail').value.trim(),
+    dept: document.getElementById('empDept').value,
+    location_id: parseInt(document.getElementById('empLocation').value, 10) || null,
+    works_for_station: document.getElementById('empWorksFor').value || '',
+  };
+  if (!id) {
+    body.numbers = [{
+      label: 'Ext 1',
+      ext: document.getElementById('empExt').value,
+      mobile: document.getElementById('empMobile').value,
+      sd: document.getElementById('empSD').value,
+      sdNo: document.getElementById('empSDNo').value,
+    }];
+  }
+  const errEl = document.getElementById('empError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/employees/' + (id || ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (res.ok) {
+      closeEmpModal();
+      showToast(id ? 'Employee updated' : 'Employee added', '#059669');
+      await loadEmployees();
+    } else {
+      errEl.textContent = data.error;
+      errEl.classList.remove('hidden');
+    }
+  } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+}
+
+async function requestDelete(id) {
+  if (!confirm('Request deletion of this employee? Another admin must confirm to complete.')) return;
+  try {
+    const res = await fetch('/api/employees/' + id + '/delete-request', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    const data = await res.json();
+    if (res.ok) { showToast('Delete requested — row highlighted red', '#ea580c'); await loadEmployees(); }
+    else { showToast(data.error, '#dc2626'); }
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+async function confirmDelete(id) {
+  if (!confirm('Confirm permanent deletion? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/employees/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    const data = await res.json();
+    if (res.ok) { showToast('Employee deleted', '#059669'); await loadEmployees(); }
+    else { showToast(data.error, '#dc2626'); }
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+async function cancelDelete(id) {
+  if (!confirm('Cancel this delete request? The row will return to normal.')) return;
+  try {
+    const res = await fetch('/api/employees/' + id + '/cancel-delete', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    const data = await res.json();
+    if (res.ok) { showToast('Delete request cancelled', '#059669'); await loadEmployees(); }
+    else { showToast(data.error, '#dc2626'); }
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+function openExtModal(id) {
+  const emp = employees.find(e => e.id === id);
+  if (!emp || emp.delete_requested_by) return;
+  document.getElementById('extEmpId').value = emp.id;
+  document.getElementById('extEmpName').textContent = emp.name;
+  resetExtForm();
+  renderExtList(emp);
+  document.getElementById('extModal').classList.remove('hidden');
+}
+
+function closeExtModal() { document.getElementById('extModal').classList.add('hidden'); }
+
+function renderExtList(emp) {
+  const list = document.getElementById('extList');
+  const nums = emp.numbers || [];
+  if (!nums.length) {
+    list.innerHTML = '<p class="text-sm text-slate-400 text-center py-4">No extensions yet. Add one below.</p>';
+    return;
+  }
+  list.innerHTML = nums.map((n, i) => `
+    <div class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/80">
+      <div class="flex-1 min-w-0 text-sm">
+        <p class="font-semibold text-slate-800">${n.label || ('Ext ' + (i + 1))}</p>
+        <p class="text-slate-600 mt-0.5 font-mono">${n.ext || '—'}${n.mobile ? ' ' + n.mobile : ''}</p>
+        <p class="text-xs text-slate-400 mt-1">${n.sd ? 'DL ' + n.sd : ''}${n.sd && (n.sd_no || n.sdNo) ? ' ' : ''}${(n.sd_no || n.sdNo) ? 'SD ' + (n.sd_no || n.sdNo) : (!n.sd ? 'No DL / SD' : '')}</p>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button type="button" onclick="startEditExt(${emp.id}, ${i})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-white rounded-lg cursor-pointer" title="Edit">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        </button>
+        <button type="button" onclick="deleteExt(${emp.id}, ${i})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg cursor-pointer" title="Remove">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </div>
+    </div>`).join('');
+}
+
+function resetExtForm() {
+  document.getElementById('extForm').reset();
+  document.getElementById('extEditIdx').value = '';
+  document.getElementById('extFormTitle').textContent = 'Add Extension';
+  document.getElementById('extSubmitBtn').textContent = 'Add Extension';
+  document.getElementById('extCancelEditBtn').classList.add('hidden');
+  document.getElementById('extError').classList.add('hidden');
+}
+
+function startEditExt(empId, idx) {
+  const emp = employees.find(e => e.id === empId);
+  if (!emp || !emp.numbers || !emp.numbers[idx]) return;
+  const n = emp.numbers[idx];
+  document.getElementById('extEmpId').value = empId;
+  document.getElementById('extEditIdx').value = String(idx);
+  document.getElementById('extExt').value = n.ext || '';
+  document.getElementById('extMobile').value = n.mobile || '';
+  document.getElementById('extSD').value = n.sd || '';
+  document.getElementById('extSDNo').value = n.sd_no || n.sdNo || '';
+  document.getElementById('extFormTitle').textContent = 'Edit ' + (n.label || ('Ext ' + (idx + 1)));
+  document.getElementById('extSubmitBtn').textContent = 'Save Changes';
+  document.getElementById('extCancelEditBtn').classList.remove('hidden');
+  document.getElementById('extError').classList.add('hidden');
+  document.getElementById('extExt').focus();
+}
+
+async function handleExtSubmit(e) {
+  e.preventDefault();
+  const empId = document.getElementById('extEmpId').value;
+  const editIdx = document.getElementById('extEditIdx').value;
+  const emp = employees.find(e => String(e.id) === String(empId));
+  const nextNum = editIdx !== '' ? (parseInt(editIdx, 10) + 1) : ((emp && emp.numbers ? emp.numbers.length : 0) + 1);
+  const body = {
+    label: 'Ext ' + nextNum,
+    ext: document.getElementById('extExt').value,
+    mobile: document.getElementById('extMobile').value,
+    sd: document.getElementById('extSD').value,
+    sdNo: document.getElementById('extSDNo').value,
+  };
+  const errEl = document.getElementById('extError');
+  errEl.classList.add('hidden');
+  try {
+    const isEdit = editIdx !== '';
+    const url = '/api/employees/' + empId + '/extensions' + (isEdit ? '/' + editIdx : '');
+    const res = await fetch(url, {
+      method: isEdit ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Failed';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    showToast(isEdit ? 'Extension updated' : 'Extension added', '#059669');
+    await loadEmployees();
+    const emp = employees.find(e => String(e.id) === String(empId));
+    if (emp) {
+      renderExtList(emp);
+      resetExtForm();
+      document.getElementById('extEmpId').value = empId;
+    } else {
+      closeExtModal();
+    }
+  } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+}
+
+async function deleteExt(empId, idx) {
+  if (!confirm('Remove this extension?')) return;
+  try {
+    const res = await fetch('/api/employees/' + empId + '/extensions/' + idx, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
+    showToast('Extension removed', '#059669');
+    await loadEmployees();
+    const emp = employees.find(e => String(e.id) === String(empId));
+    if (emp) {
+      renderExtList(emp);
+      resetExtForm();
+      document.getElementById('extEmpId').value = empId;
+    } else {
+      closeExtModal();
+    }
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+let allBranches = [];
+let allDeptsByBranch = {};
+let departmentRows = [];
+
+function buildBranchDeptMap() {
+  allBranches = [...new Set(employees.map(e => e.branch))].sort();
+  allDeptsByBranch = { '__all__': new Set() };
+  allBranches.forEach(b => allDeptsByBranch[b] = new Set());
+  employees.forEach(e => {
+    allDeptsByBranch['__all__'].add(e.dept);
+    if (allDeptsByBranch[e.branch]) allDeptsByBranch[e.branch].add(e.dept);
+  });
+}
+
+async function loadDepartments() {
+  try {
+    const res = await fetch('/api/departments', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (res.status === 401) { logout(); return; }
+    departmentRows = await res.json();
+    if (!Array.isArray(departmentRows)) departmentRows = [];
+    renderDepartments();
+  } catch { showToast('Failed to load departments', '#dc2626'); }
+}
+
+function renderDepartments() {
+  const tbody = document.getElementById('deptTable');
+  const empty = document.getElementById('deptEmpty');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  if (!departmentRows.length) {
+    empty.classList.remove('hidden');
+    return;
+  }
+  empty.classList.add('hidden');
+  departmentRows.forEach(d => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50 transition-colors';
+    tr.innerHTML = `
+      <td class="px-4 py-3.5 font-medium text-slate-800">${escapeHtml(d.name)}</td>
+      <td class="px-4 py-3.5 text-slate-500">${d.employee_count || 0}</td>
+      <td class="px-4 py-3.5 text-right whitespace-nowrap">
+        <button type="button" onclick="openDeptModal(${d.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer transition-colors" title="Edit">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        </button>
+        <button type="button" onclick="deleteDepartment(${d.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl cursor-pointer transition-colors" title="Delete">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function openDeptModal(id) {
+  document.getElementById('deptError').classList.add('hidden');
+  document.getElementById('deptForm').reset();
+  document.getElementById('deptId').value = '';
+  document.getElementById('deptModalTitle').textContent = 'Add Department';
+  if (id) {
+    const d = departmentRows.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('deptModalTitle').textContent = 'Edit Department';
+    document.getElementById('deptId').value = d.id;
+    document.getElementById('deptName').value = d.name;
+  }
+  document.getElementById('deptModal').classList.remove('hidden');
+}
+
+function closeDeptModal() { document.getElementById('deptModal').classList.add('hidden'); }
+
+async function handleDeptSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('deptId').value;
+  const body = { name: document.getElementById('deptName').value.trim() };
+  const errEl = document.getElementById('deptError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/departments' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Save failed';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    closeDeptModal();
+    showToast(id ? 'Department updated' : 'Department added', '#059669');
+    await loadDepartments();
+    await loadEmployees();
+    buildBranchDeptMap();
+  } catch {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteDepartment(id) {
+  const d = departmentRows.find(x => x.id === id);
+  if (d && String(d.name).toLowerCase() === 'uncategorised') {
+    showToast('Cannot delete Uncategorised', '#dc2626');
+    return;
+  }
+  const count = d && d.employee_count ? Number(d.employee_count) : 0;
+  const msg = count
+    ? `Delete "${d.name}"? ${count} employee${count === 1 ? '' : 's'} will move to Uncategorised.`
+    : `Delete "${d ? d.name : 'this department'}"?`;
+  if (!confirm(msg)) return;
+  try {
+    const res = await fetch('/api/departments/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast(data.error || 'Delete failed', '#dc2626');
+      return;
+    }
+    const moved = data.moved || 0;
+    showToast(moved ? `Department deleted · ${moved} moved to Uncategorised` : 'Department deleted', '#059669');
+    await loadDepartments();
+    await loadEmployees();
+    buildBranchDeptMap();
+  } catch { showToast('Delete failed', '#dc2626'); }
+}
+
+let accessIpRows = [];
+let accessPasscodeRows = [];
+let accessClientIp = '';
+
+async function loadAccessControl() {
+  try {
+    const freshIp = await detectBrowserPublicIp(true);
+    const auth = { 'Authorization': 'Bearer ' + getToken() };
+    if (freshIp) auth['X-Client-Public-Ip'] = freshIp;
+    const [ipRes, pcRes] = await Promise.all([
+      fetch('/api/access/ips', { headers: auth }),
+      fetch('/api/access/passcodes', { headers: auth }),
+    ]);
+    if (ipRes.status === 401 || pcRes.status === 401) { logout(); return; }
+    const ipData = await ipRes.json();
+    accessIpRows = Array.isArray(ipData.ips) ? ipData.ips : [];
+    // Prefer freshly detected browser IP so stale cache never sticks
+    accessClientIp = freshIp || ipData.clientIp || '';
+    accessPasscodeRows = await pcRes.json();
+    if (!Array.isArray(accessPasscodeRows)) accessPasscodeRows = [];
+    document.getElementById('accessClientIp').textContent = accessClientIp || 'unknown';
+    renderAccessIps();
+    renderAccessPasscodes();
+  } catch { showToast('Failed to load access settings', '#dc2626'); }
+}
+
+async function loadAccessLogs() {
+  const action = document.getElementById('accessLogActionFilter').value;
+  const days = document.getElementById('accessLogDaysFilter').value;
+  const params = new URLSearchParams({ days });
+  if (action) params.set('action', action);
+  try {
+    const res = await fetch('/api/access/logs?' + params.toString(), { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (res.status === 401) { logout(); return; }
+    const rows = await res.json();
+    renderAccessLogs(Array.isArray(rows) ? rows : []);
+  } catch { showToast('Failed to load access logs', '#dc2626'); }
+}
+
+function renderAccessLogs(rows) {
+  const tbody = document.getElementById('accessLogTable');
+  const empty = document.getElementById('accessLogEmpty');
+  tbody.innerHTML = '';
+  document.getElementById('accessLogCount').textContent = rows.length ? rows.length + ' events' : '';
+  if (!rows.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  const badges = {
+    unlock_ok: { label: 'Unlock OK', cls: 'bg-green-100 text-green-700' },
+    unlock_fail: { label: 'Unlock fail', cls: 'bg-red-100 text-red-700' },
+    office_ip: { label: 'Office IP', cls: 'bg-blue-100 text-blue-700' },
+  };
+  rows.forEach(row => {
+    const b = badges[row.action] || { label: row.action, cls: 'bg-slate-100 text-slate-600' };
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50';
+    tr.innerHTML = `
+      <td class="px-4 py-3 text-slate-600 whitespace-nowrap text-xs">${formatDateTime(row.created_at)}</td>
+      <td class="px-4 py-3"><span class="text-xs font-semibold px-2 py-0.5 rounded-lg ${b.cls}">${escapeHtml(b.label)}</span></td>
+      <td class="px-4 py-3 font-mono text-slate-800 text-xs">${escapeHtml(row.ip_address || '—')}</td>
+      <td class="px-4 py-3 text-slate-600 text-xs">${escapeHtml(row.passcode_label || '—')}</td>
+      <td class="px-4 py-3 text-slate-500 text-xs max-w-xs truncate" title="${escapeHtml(row.details || '')}">${escapeHtml(row.details || '—')}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAccessIps() {
+  const tbody = document.getElementById('accessIpTable');
+  const empty = document.getElementById('accessIpEmpty');
+  tbody.innerHTML = '';
+  if (!accessIpRows.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  accessIpRows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50';
+    tr.innerHTML = `
+      <td class="px-4 py-3 font-mono text-slate-800">${escapeHtml(row.ip_address)}</td>
+      <td class="px-4 py-3 text-slate-600">${escapeHtml(row.label || '—')}</td>
+      <td class="px-4 py-3">${row.is_active ? '<span class="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-lg">Active</span>' : '<span class="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">Off</span>'}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <button type="button" onclick="openIpModal(${row.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer" title="Edit">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        </button>
+        <button type="button" onclick="deleteAccessIp(${row.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl cursor-pointer" title="Delete">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function renderAccessPasscodes() {
+  const tbody = document.getElementById('accessPasscodeTable');
+  const empty = document.getElementById('accessPasscodeEmpty');
+  tbody.innerHTML = '';
+  if (!accessPasscodeRows.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  accessPasscodeRows.forEach(row => {
+    const tr = document.createElement('tr');
+    tr.className = 'hover:bg-slate-50';
+    tr.innerHTML = `
+      <td class="px-4 py-3 font-medium text-slate-800">${escapeHtml(row.label || 'Passcode')}</td>
+      <td class="px-4 py-3 text-slate-600 text-xs">${escapeHtml(row.duration_label || ((row.duration_amount || 7) + ' ' + (row.duration_unit || 'days')))}</td>
+      <td class="px-4 py-3">${row.is_active ? '<span class="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-lg">Active</span>' : '<span class="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">Off</span>'}</td>
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <button type="button" onclick="openPasscodeModal(${row.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer" title="Edit">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+        </button>
+        <button type="button" onclick="deleteAccessPasscode(${row.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl cursor-pointer" title="Delete">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function openIpModal(id) {
+  document.getElementById('ipError').classList.add('hidden');
+  document.getElementById('ipForm').reset();
+  document.getElementById('ipId').value = '';
+  document.getElementById('ipActive').checked = true;
+  document.getElementById('ipModalTitle').textContent = 'Add office IP';
+  if (id) {
+    const row = accessIpRows.find(x => x.id === id);
+    if (!row) return;
+    document.getElementById('ipModalTitle').textContent = 'Edit office IP';
+    document.getElementById('ipId').value = row.id;
+    document.getElementById('ipAddress').value = row.ip_address;
+    document.getElementById('ipLabel').value = row.label || '';
+    document.getElementById('ipActive').checked = !!row.is_active;
+  }
+  document.getElementById('ipModal').classList.remove('hidden');
+}
+
+function closeIpModal() { document.getElementById('ipModal').classList.add('hidden'); }
+
+function addCurrentIp() {
+  if (!accessClientIp) { showToast('Could not detect your IP', '#dc2626'); return; }
+  openIpModal();
+  document.getElementById('ipAddress').value = accessClientIp;
+  document.getElementById('ipLabel').value = 'My current connection';
+}
+
+async function handleIpSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('ipId').value;
+  const body = {
+    ip_address: document.getElementById('ipAddress').value.trim(),
+    label: document.getElementById('ipLabel').value.trim(),
+    is_active: document.getElementById('ipActive').checked ? 1 : 0,
+  };
+  const errEl = document.getElementById('ipError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/access/ips' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Save failed';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    closeIpModal();
+    showToast(id ? 'IP updated' : 'IP added', '#059669');
+    await loadAccessControl();
+  } catch {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteAccessIp(id) {
+  if (!confirm('Remove this office IP?')) return;
+  try {
+    const res = await fetch('/api/access/ips/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Delete failed', '#dc2626'); return; }
+    showToast('IP removed', '#059669');
+    await loadAccessControl();
+  } catch { showToast('Delete failed', '#dc2626'); }
+}
+
+function openPasscodeModal(id) {
+  document.getElementById('passcodeError').classList.add('hidden');
+  document.getElementById('passcodeForm').reset();
+  document.getElementById('passcodeId').value = '';
+  document.getElementById('passcodeActive').checked = true;
+  document.getElementById('passcodeValue').required = true;
+  document.getElementById('passcodeHint').classList.add('hidden');
+  document.getElementById('passcodeValueLabel').textContent = 'Passcode *';
+  document.getElementById('passcodeDurationAmount').value = '7';
+  document.getElementById('passcodeDurationUnit').value = 'days';
+  document.getElementById('passcodeModalTitle').textContent = 'Add passcode';
+  if (id) {
+    const row = accessPasscodeRows.find(x => x.id === id);
+    if (!row) return;
+    document.getElementById('passcodeModalTitle').textContent = 'Edit passcode';
+    document.getElementById('passcodeId').value = row.id;
+    document.getElementById('passcodeLabel').value = row.label || '';
+    document.getElementById('passcodeActive').checked = !!row.is_active;
+    document.getElementById('passcodeValue').required = false;
+    document.getElementById('passcodeValue').value = '';
+    document.getElementById('passcodeValueLabel').textContent = 'New passcode';
+    document.getElementById('passcodeHint').classList.remove('hidden');
+    document.getElementById('passcodeDurationAmount').value = row.duration_amount || 7;
+    document.getElementById('passcodeDurationUnit').value = row.duration_unit || 'days';
+  }
+  document.getElementById('passcodeModal').classList.remove('hidden');
+}
+
+function closePasscodeModal() { document.getElementById('passcodeModal').classList.add('hidden'); }
+
+async function handlePasscodeSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('passcodeId').value;
+  const body = {
+    label: document.getElementById('passcodeLabel').value.trim(),
+    is_active: document.getElementById('passcodeActive').checked ? 1 : 0,
+    duration_amount: parseInt(document.getElementById('passcodeDurationAmount').value, 10) || 7,
+    duration_unit: document.getElementById('passcodeDurationUnit').value || 'days',
+  };
+  const code = document.getElementById('passcodeValue').value.trim();
+  if (!id && code.length < 4) {
+    const errEl = document.getElementById('passcodeError');
+    errEl.textContent = 'Passcode must be at least 4 characters';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (code) body.passcode = code;
+  const errEl = document.getElementById('passcodeError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/access/passcodes' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Save failed';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    closePasscodeModal();
+    showToast(id ? 'Passcode updated' : 'Passcode added', '#059669');
+    await loadAccessControl();
+  } catch {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteAccessPasscode(id) {
+  if (!confirm('Delete this passcode?')) return;
+  try {
+    const res = await fetch('/api/access/passcodes/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Delete failed', '#dc2626'); return; }
+    showToast('Passcode deleted', '#059669');
+    await loadAccessControl();
+  } catch { showToast('Delete failed', '#dc2626'); }
+}
+
+async function loadBranchFilterOptions() {
+  try {
+    const res = await fetch('/api/filters', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (Array.isArray(data.branchRows)) branchRows = data.branchRows;
+    if (Array.isArray(data.states)) stateRows = data.states;
+    if (Array.isArray(data.locations)) locationRows = data.locations;
+    const branches = (data.branches || branchRows.map(b => b.name) || []).slice().sort();
+    if (branches.length) allBranches = branches;
+    const sel = document.getElementById('branchFilter');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All Countries</option>';
+    allBranches.forEach(b => {
+      const o = document.createElement('option');
+      o.value = b;
+      o.textContent = b;
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+  } catch { /* keep existing options */ }
+}
+
+function getPlaceOptions() {
+  const byCountry = {};
+  (stateRows || []).forEach(s => {
+    const key = String(s.country_id);
+    if (!byCountry[key]) byCountry[key] = [];
+    byCountry[key].push(s);
+  });
+  const opts = [];
+  Object.keys(byCountry).forEach(cid => {
+    const states = byCountry[cid];
+    const real = states.filter(s => s.name !== 'Main');
+    if (real.length) {
+      real.forEach(s => opts.push({ id: s.id, label: s.name, country: s.country_name }));
+    } else {
+      const main = states.find(s => s.name === 'Main') || states[0];
+      if (main) opts.push({ id: main.id, label: main.country_name, country: main.country_name });
+    }
+  });
+  return opts.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function populateEmpPlaces(selectedStateId) {
+  const sel = document.getElementById('empPlace');
+  if (!sel) return;
+  const cur = selectedStateId !== undefined ? String(selectedStateId || '') : sel.value;
+  sel.innerHTML = '<option value="">Select (e.g. Dammam, Qatar)</option>';
+  getPlaceOptions().forEach(p => {
+    const o = document.createElement('option');
+    o.value = String(p.id);
+    o.textContent = p.label;
+    o.dataset.country = p.country || '';
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
+}
+
+function populateEmpDepartments(selectedDept) {
+  const deptSel = document.getElementById('empDept');
+  if (!deptSel) return;
+  // Support old call signature populateEmpDepartments(country, dept)
+  let curDept = selectedDept;
+  if (arguments.length >= 2) curDept = arguments[1];
+  else if (curDept === undefined) curDept = deptSel.value;
+  deptSel.innerHTML = '<option value="">Select Department</option>';
+  const fromMaster = (departmentRows || []).map(d => d.name);
+  const fromEmployees = [...(allDeptsByBranch['__all__'] || [])];
+  const depts = [...new Set([...fromMaster, ...fromEmployees].filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  depts.forEach(d => {
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = d;
+    deptSel.appendChild(o);
+  });
+  if (curDept && [...deptSel.options].some(o => o.value === curDept)) deptSel.value = curDept;
+}
+
+function getWorksForStationOptions() {
+  const fromPlaces = getPlaceOptions()
+    .map(p => p.label)
+    .filter(n => n && n !== 'Main');
+  const fromEmployees = (employees || [])
+    .map(e => e.works_for_station)
+    .filter(Boolean);
+  const extras = ['Dubai', 'Dammam', 'Jeddah', 'Qatar'];
+  return [...new Set([...fromPlaces, ...fromEmployees, ...extras])]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
+
+function populateEmpWorksFor(selected) {
+  const sel = document.getElementById('empWorksFor');
+  if (!sel) return;
+  const cur = selected !== undefined ? String(selected || '') : sel.value;
+  sel.innerHTML = '<option value="">— None (owns their own site) —</option>';
+  getWorksForStationOptions().forEach(name => {
+    const o = document.createElement('option');
+    o.value = name;
+    o.textContent = name;
+    sel.appendChild(o);
+  });
+  if (cur && ![...sel.options].some(o => o.value === cur)) {
+    const o = document.createElement('option');
+    o.value = cur;
+    o.textContent = cur;
+    sel.appendChild(o);
+  }
+  if (cur) sel.value = cur;
+}
+
+function populateWorksForFilter() {
+  const sel = document.getElementById('worksForFilter');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">Works for: Any</option>';
+  getWorksForStationOptions().forEach(name => {
+    const o = document.createElement('option');
+    o.value = name;
+    o.textContent = name;
+    sel.appendChild(o);
+  });
+  if (cur && [...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
+function onEmpPlaceChange() {
+  populateEmpLocationsForPlace();
+}
+
+function populateEmpLocationsForPlace(selectedId) {
+  const sel = document.getElementById('empLocation');
+  if (!sel) return;
+  const stateId = document.getElementById('empPlace').value;
+  const cur = selectedId !== undefined ? String(selectedId || '') : sel.value;
+  sel.innerHTML = '<option value="">Select Company</option>';
+  if (!stateId) return;
+  locationRows.filter(l => String(l.state_id) === String(stateId)).forEach(l => {
+    const o = document.createElement('option');
+    o.value = l.id;
+    o.textContent = l.city && l.city !== l.name ? (l.name + ' (' + l.city + ')') : l.name;
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
+  else if (sel.options.length === 2) sel.selectedIndex = 1;
+}
+
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `hidden fixed bottom-6 right-6 z-50 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-semibold text-white toast-in`;
+  t.style.background = color;
+  t.classList.remove('hidden');
+  setTimeout(() => t.classList.add('hidden'), 3200);
+}
+
+let stations = [];
+let branchRows = [];
+let stateRows = [];
+let locationRows = [];
+
+async function loadBranchesLocations() {
+  try {
+    const [bRes, sRes, lRes] = await Promise.all([
+      fetch('/api/branches', { headers: { 'Authorization': 'Bearer ' + getToken() } }),
+      fetch('/api/states', { headers: { 'Authorization': 'Bearer ' + getToken() } }),
+      fetch('/api/locations', { headers: { 'Authorization': 'Bearer ' + getToken() } }),
+    ]);
+    if (bRes.status === 401 || sRes.status === 401 || lRes.status === 401) { logout(); return; }
+    branchRows = await bRes.json();
+    stateRows = await sRes.json();
+    locationRows = await lRes.json();
+    if (!Array.isArray(branchRows)) branchRows = [];
+    if (!Array.isArray(stateRows)) stateRows = [];
+    if (!Array.isArray(locationRows)) locationRows = [];
+    allBranches = branchRows.map(b => b.name).sort();
+    renderBranchCards();
+  } catch { showToast('Failed to load branches', '#dc2626'); }
+}
+
+function renderBranchCards() {
+  const wrap = document.getElementById('branchCards');
+  const empty = document.getElementById('branchEmpty');
+  wrap.innerHTML = '';
+  if (!branchRows.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  branchRows.forEach(c => {
+    const states = stateRows.filter(s => s.country_id === c.id);
+    const totalLocs = locationRows.filter(l => l.country_id === c.id).length;
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden';
+    card.innerHTML = `
+      <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/80 flex items-start justify-between gap-3">
+        <div>
+          <h3 class="font-bold text-slate-800 text-base">${escapeHtml(c.name)}</h3>
+          <p class="text-xs text-slate-400 mt-0.5">${states.length} state${states.length === 1 ? '' : 's'} · ${totalLocs} compan${totalLocs === 1 ? 'y' : 'ies'}</p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button type="button" onclick="openStateModal(null, ${c.id})" class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-600 hover:bg-brand-700 text-white cursor-pointer">Add state</button>
+          <button type="button" onclick="openBranchModal(${c.id})" class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer">Edit</button>
+          <button type="button" onclick="deleteBranch(${c.id})" class="px-3 py-1.5 text-xs font-semibold rounded-xl bg-white border border-slate-200 text-red-600 hover:bg-red-50 cursor-pointer">Delete</button>
+        </div>
+      </div>
+      <div class="p-3 space-y-3">
+        ${states.length ? states.map(s => renderStateBlock(s)).join('') : '<p class="text-sm text-slate-400 px-2 py-3">No states yet — add a state to add companies under this country</p>'}
+      </div>`;
+    wrap.appendChild(card);
+  });
+}
+
+function renderStateBlock(s) {
+  const locs = locationRows.filter(l => l.state_id === s.id);
+  return `
+    <div class="rounded-xl border border-slate-200 bg-slate-50/40 overflow-hidden">
+      <div class="px-4 py-2.5 flex items-center justify-between gap-2 bg-slate-100/70">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="font-semibold text-slate-700 text-sm truncate">${escapeHtml(s.name)}</span>
+          <span class="text-[11px] text-slate-400 shrink-0">${locs.length} compan${locs.length === 1 ? 'y' : 'ies'}</span>
+        </div>
+        <div class="flex gap-1 shrink-0">
+          <button type="button" onclick="openLocationModal(null, ${s.id})" class="px-2.5 py-1 text-[11px] font-semibold rounded-lg bg-brand-600 hover:bg-brand-700 text-white cursor-pointer">Add company</button>
+          <button type="button" onclick="openStateModal(${s.id})" class="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-white rounded-lg cursor-pointer" title="Edit state">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          </button>
+          <button type="button" onclick="deleteState(${s.id})" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg cursor-pointer" title="Delete state">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="p-2.5 space-y-2">
+        ${locs.length ? locs.map(l => `
+          <div class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-white">
+            <div class="flex-1 min-w-0 text-sm">
+              <p class="font-semibold text-slate-800">${escapeHtml(l.name)}</p>
+              ${l.city ? `<p class="text-xs text-slate-400 mt-0.5">${escapeHtml(l.city)}</p>` : ''}
+              ${l.address ? `<p class="text-xs text-slate-600 mt-1">${escapeHtml(l.address)}</p>` : ''}
+              ${l.maps_url ? `<a href="${escapeHtml(l.maps_url)}" target="_blank" rel="noopener" class="text-xs text-brand-600 hover:underline font-medium">Maps</a>` : ''}
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <button type="button" onclick="openLocationModal(${l.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-slate-50 rounded-lg cursor-pointer" title="Edit">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </button>
+              <button type="button" onclick="deleteLocation(${l.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-slate-50 rounded-lg cursor-pointer" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          </div>`).join('') : '<p class="text-xs text-slate-400 px-2 py-2">No companies yet</p>'}
+      </div>
+    </div>`;
+}
+
+function openBranchModal(id) {
+  document.getElementById('branchError').classList.add('hidden');
+  document.getElementById('branchForm').reset();
+  document.getElementById('branchId').value = '';
+  document.getElementById('branchModalTitle').textContent = 'Add Country';
+  if (id) {
+    const b = branchRows.find(x => x.id === id);
+    if (!b) return;
+    document.getElementById('branchModalTitle').textContent = 'Edit Country';
+    document.getElementById('branchId').value = b.id;
+    document.getElementById('branchName').value = b.name;
+  }
+  document.getElementById('branchModal').classList.remove('hidden');
+}
+function closeBranchModal() { document.getElementById('branchModal').classList.add('hidden'); }
+
+async function handleBranchSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('branchId').value;
+  const body = { name: document.getElementById('branchName').value.trim() };
+  const errEl = document.getElementById('branchError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/branches' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+    closeBranchModal();
+    showToast(id ? 'Country updated' : 'Country added', '#059669');
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+  } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+}
+
+async function deleteBranch(id) {
+  if (!confirm('Delete this country and all its states, locations and station numbers?')) return;
+  try {
+    const res = await fetch('/api/branches/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
+    showToast('Country deleted', '#059669');
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+function openStateModal(id, countryId) {
+  document.getElementById('stateError').classList.add('hidden');
+  document.getElementById('stateForm').reset();
+  document.getElementById('stateId').value = '';
+  document.getElementById('stateCountryId').value = countryId || '';
+  document.getElementById('stateModalTitle').textContent = 'Add State';
+  if (id) {
+    const s = stateRows.find(x => x.id === id);
+    if (!s) return;
+    document.getElementById('stateModalTitle').textContent = 'Edit State — ' + (s.country_name || '');
+    document.getElementById('stateId').value = s.id;
+    document.getElementById('stateCountryId').value = s.country_id;
+    document.getElementById('stateName').value = s.name;
+  } else {
+    const c = branchRows.find(x => x.id === countryId);
+    document.getElementById('stateModalTitle').textContent = 'Add State — ' + (c ? c.name : '');
+  }
+  document.getElementById('stateModal').classList.remove('hidden');
+}
+function closeStateModal() { document.getElementById('stateModal').classList.add('hidden'); }
+
+async function handleStateSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('stateId').value;
+  const body = {
+    country_id: parseInt(document.getElementById('stateCountryId').value, 10),
+    name: document.getElementById('stateName').value.trim(),
+  };
+  const errEl = document.getElementById('stateError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/states' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+    closeStateModal();
+    showToast(id ? 'State updated' : 'State added', '#059669');
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+  } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+}
+
+async function deleteState(id) {
+  if (!confirm('Delete this state and all its companies/station numbers?')) return;
+  try {
+    const res = await fetch('/api/states/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
+    showToast('State deleted', '#059669');
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+function openLocationModal(id, stateId) {
+  document.getElementById('locationError').classList.add('hidden');
+  document.getElementById('locationForm').reset();
+  document.getElementById('locationId').value = '';
+  document.getElementById('locationStateId').value = stateId || '';
+  document.getElementById('locationModalTitle').textContent = 'Add Company';
+  if (id) {
+    const l = locationRows.find(x => x.id === id);
+    if (!l) return;
+    const stateTag = l.state_name && l.state_name !== 'Main' ? ' / ' + l.state_name : '';
+    document.getElementById('locationModalTitle').textContent = 'Edit Company — ' + (l.branch_name || '') + stateTag;
+    document.getElementById('locationId').value = l.id;
+    document.getElementById('locationStateId').value = l.state_id;
+    document.getElementById('locationName').value = l.name;
+    document.getElementById('locationCity').value = l.city || '';
+    document.getElementById('locationAddress').value = l.address || '';
+    document.getElementById('locationMapsUrl').value = l.maps_url || '';
+  } else {
+    const s = stateRows.find(x => x.id === stateId);
+    const stateTag = s && s.name !== 'Main' ? ' / ' + s.name : '';
+    document.getElementById('locationModalTitle').textContent = 'Add Company — ' + (s ? s.country_name : '') + stateTag;
+  }
+  document.getElementById('locationModal').classList.remove('hidden');
+}
+function closeLocationModal() { document.getElementById('locationModal').classList.add('hidden'); }
+
+async function handleLocationSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('locationId').value;
+  const body = {
+    state_id: parseInt(document.getElementById('locationStateId').value, 10),
+    name: document.getElementById('locationName').value.trim(),
+    city: document.getElementById('locationCity').value.trim(),
+    address: document.getElementById('locationAddress').value.trim(),
+    maps_url: document.getElementById('locationMapsUrl').value.trim(),
+  };
+  const errEl = document.getElementById('locationError');
+  errEl.classList.add('hidden');
+  try {
+    const res = await fetch('/api/locations' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST', headers: getHeaders(), body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error || 'Failed'; errEl.classList.remove('hidden'); return; }
+    closeLocationModal();
+    showToast(id ? 'Company updated' : 'Company added', '#059669');
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+  } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+}
+
+async function deleteLocation(id) {
+  if (!confirm('Delete this company and its station numbers?')) return;
+  try {
+    const res = await fetch('/api/locations/' + id, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + getToken() } });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
+    showToast('Company deleted', '#059669');
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+async function loadStations() {
+  try {
+    if (!branchRows.length || !stateRows.length || !locationRows.length) await loadBranchesLocations();
+    const res = await fetch('/api/stations/all', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (res.status === 401) { logout(); return; }
+    stations = await res.json();
+    if (!Array.isArray(stations)) stations = [];
+    renderStations(stations);
+  } catch { showToast('Failed to load station numbers', '#dc2626'); }
+}
+
+function stationTypeLabel(t) {
+  if (t === 'internet') return 'Internet';
+  if (t === 'both') return 'Tel + Internet';
+  return 'Tel';
+}
+function stationTypeBadgeClass(t) {
+  if (t === 'internet') return 'bg-indigo-100 text-indigo-700';
+  if (t === 'both') return 'bg-violet-100 text-violet-700';
+  return 'bg-sky-100 text-sky-700';
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderStations(rows) {
+  const cards = document.getElementById('stationCards');
+  const empty = document.getElementById('stationEmpty');
+  cards.innerHTML = '';
+
+  // Show one card per location (even if no phones yet)
+  const byLoc = {};
+  locationRows.forEach(l => { byLoc[l.id] = { loc: l, nums: [] }; });
+  rows.forEach(s => {
+    if (!s.location_id) return;
+    if (!byLoc[s.location_id]) byLoc[s.location_id] = { loc: { id: s.location_id, name: s.station_name, branch_name: s.branch, state_name: s.state_name, country_id: s.country_id, state_id: s.state_id }, nums: [] };
+    byLoc[s.location_id].nums.push(s);
+  });
+
+  const keys = Object.keys(byLoc).sort((a, b) => {
+    const A = byLoc[a].loc, B = byLoc[b].loc;
+    return String(A.branch_name || '').localeCompare(String(B.branch_name || '')) || String(A.name || '').localeCompare(String(B.name || ''));
+  });
+
+  if (!keys.length) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+
+  keys.forEach(key => {
+    const { loc, nums } = byLoc[key];
+    const stateTag = loc.state_name && loc.state_name !== 'Main' ? ' / ' + loc.state_name : '';
+    const title = (loc.branch_name || '') + stateTag + ' — ' + (loc.name || 'Location');
+    const card = document.createElement('div');
+    card.className = 'bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden';
+    card.innerHTML = `
+      <div class="px-5 py-4 border-b border-slate-100 bg-slate-50/80 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="font-bold text-slate-800 text-base">${escapeHtml(title)}</h3>
+          <p class="text-xs text-slate-400 mt-0.5">${nums.length} number${nums.length === 1 ? '' : 's'}${loc.city ? ' · ' + escapeHtml(loc.city) : ''}</p>
+        </div>
+        <button type="button" onclick="openStationModal(null, ${loc.country_id || 'null'}, ${loc.id})" class="shrink-0 px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-600 hover:bg-brand-700 text-white cursor-pointer flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+          Add number
+        </button>
+      </div>
+      ${(loc.address || loc.maps_url) ? `
+      <div class="px-5 py-3 border-b border-slate-100 bg-white text-sm">
+        ${loc.address ? `<p class="text-slate-600"><span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Address</span>${escapeHtml(loc.address)}</p>` : ''}
+        ${loc.maps_url ? `<a href="${escapeHtml(loc.maps_url)}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 mt-2 text-brand-600 hover:underline font-semibold text-xs">Open in Google Maps</a>` : ''}
+      </div>` : ''}
+      <div class="p-3 space-y-2">
+        ${nums.length ? nums.map(s => `
+          <div class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/60">
+            <div class="flex-1 min-w-0 text-sm">
+              <div class="flex flex-wrap items-center gap-2 mb-1">
+                <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stationTypeBadgeClass(s.number_type)}">${stationTypeLabel(s.number_type)}</span>
+                ${s.is_primary ? '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-brand-100 text-brand-700">Primary</span>' : '<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-200 text-slate-600">Secondary</span>'}
+                ${s.label ? `<span class="text-xs text-slate-400">${escapeHtml(s.label)}</span>` : ''}
+              </div>
+              <p class="font-mono font-semibold text-slate-800">${escapeHtml(s.phone)}</p>
+            </div>
+            <div class="flex gap-1 shrink-0">
+              <button type="button" onclick="openStationModal(${s.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-white rounded-lg cursor-pointer" title="Edit">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </button>
+              <button type="button" onclick="deleteStation(${s.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-white rounded-lg cursor-pointer" title="Delete">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          </div>`).join('') : '<p class="text-sm text-slate-400 px-2 py-2">No phone numbers yet</p>'}
+      </div>`;
+    cards.appendChild(card);
+  });
+}
+
+function populateStationBranchSelect(selectedBranchId) {
+  const sel = document.getElementById('stationBranch');
+  sel.innerHTML = '<option value="">Select Country</option>';
+  branchRows.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b.id;
+    o.textContent = b.name;
+    sel.appendChild(o);
+  });
+  if (selectedBranchId) sel.value = String(selectedBranchId);
+}
+
+function populateStationStateSelect(countryId, selectedStateId) {
+  const sel = document.getElementById('stationState');
+  if (!sel) return;
+  const cur = selectedStateId !== undefined ? String(selectedStateId || '') : sel.value;
+  sel.innerHTML = '<option value="">Select State</option>';
+  stateRows.filter(s => String(s.country_id) === String(countryId)).forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id;
+    o.textContent = s.name;
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
+}
+
+function onStationBranchChange(selectedLocationId) {
+  const branchId = parseInt(document.getElementById('stationBranch').value, 10) || null;
+  let stateId = null;
+  if (selectedLocationId) {
+    const loc = locationRows.find(l => l.id === selectedLocationId);
+    if (loc) stateId = loc.state_id;
+  }
+  populateStationStateSelect(branchId, stateId);
+  onStationStateChange(selectedLocationId);
+}
+
+function onStationStateChange(selectedLocationId) {
+  const branchId = parseInt(document.getElementById('stationBranch').value, 10) || null;
+  const stateVal = document.getElementById('stationState').value;
+  const sel = document.getElementById('stationLocation');
+  const cur = selectedLocationId !== undefined ? String(selectedLocationId || '') : sel.value;
+  sel.innerHTML = '<option value="">Select Location</option>';
+  locationRows.filter(l => stateVal ? String(l.state_id) === String(stateVal) : l.country_id === branchId).forEach(l => {
+    const o = document.createElement('option');
+    o.value = l.id;
+    o.textContent = l.name;
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
+}
+
+function openStationModal(id, branchIdPrefill, locationIdPrefill) {
+  const editing = id != null && id !== '';
+  document.getElementById('stationError').classList.add('hidden');
+  document.getElementById('stationForm').reset();
+  document.getElementById('stationId').value = '';
+  document.getElementById('stationPrimary').checked = true;
+  document.getElementById('stationBranch').disabled = false;
+  document.getElementById('stationState').disabled = false;
+  document.getElementById('stationLocation').disabled = false;
+
+  if (editing) {
+    const s = stations.find(x => x.id === id);
+    if (!s) return;
+    const loc = locationRows.find(l => l.id === s.location_id);
+    const countryId = (loc && loc.country_id) || s.country_id;
+    populateStationBranchSelect(countryId);
+    onStationBranchChange(s.location_id);
+    document.getElementById('stationModalTitle').textContent = 'Edit Number';
+    document.getElementById('stationId').value = s.id;
+    document.getElementById('stationType').value = s.number_type;
+    document.getElementById('stationLabel').value = s.label || '';
+    document.getElementById('stationPhone').value = s.phone;
+    document.getElementById('stationPrimary').checked = !!s.is_primary;
+    document.getElementById('stationBranch').disabled = true;
+    document.getElementById('stationState').disabled = true;
+    document.getElementById('stationLocation').disabled = true;
+  } else {
+    populateStationBranchSelect(branchIdPrefill || null);
+    onStationBranchChange(locationIdPrefill || null);
+    const loc = locationRows.find(l => l.id === locationIdPrefill);
+    const stateTag = loc && loc.state_name && loc.state_name !== 'Main' ? ' / ' + loc.state_name : '';
+    document.getElementById('stationModalTitle').textContent = loc
+      ? ('Add Number — ' + (loc.branch_name || '') + stateTag + ' / ' + loc.name)
+      : 'Add Station Number';
+    if (locationIdPrefill) {
+      document.getElementById('stationPrimary').checked = !stations.some(x => x.location_id === locationIdPrefill && x.is_primary);
+    }
+  }
+  document.getElementById('stationModal').classList.remove('hidden');
+}
+
+function closeStationModal() {
+  document.getElementById('stationBranch').disabled = false;
+  document.getElementById('stationState').disabled = false;
+  document.getElementById('stationLocation').disabled = false;
+  document.getElementById('stationModal').classList.add('hidden');
+}
+
+async function handleStationSubmit(e) {
+  e.preventDefault();
+  const id = document.getElementById('stationId').value;
+  const body = {
+    location_id: parseInt(document.getElementById('stationLocation').value, 10),
+    number_type: document.getElementById('stationType').value,
+    label: document.getElementById('stationLabel').value,
+    phone: document.getElementById('stationPhone').value,
+    is_primary: document.getElementById('stationPrimary').checked,
+  };
+  const errEl = document.getElementById('stationError');
+  errEl.classList.add('hidden');
+  if (!body.location_id) {
+    errEl.textContent = 'Select a location';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const res = await fetch('/api/stations' + (id ? '/' + id : ''), {
+      method: id ? 'PUT' : 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Failed';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    closeStationModal();
+    showToast(id ? 'Number updated' : 'Number added', '#059669');
+    await loadStations();
+  } catch {
+    errEl.textContent = 'Network error';
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteStation(id) {
+  if (!confirm('Delete this number from the location?')) return;
+  try {
+    const res = await fetch('/api/stations/' + id, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
+    showToast('Number deleted', '#059669');
+    await loadStations();
+  } catch { showToast('Error', '#dc2626'); }
+}
+
+// ── Bulk import template + upload ──
+const IMPORT_HEADERS = ['id', 'name', 'email', 'dept', 'state', 'location', 'Ext 1', 'Ext 2', 'mobile', 'direct_line', 'speed_dial'];
+
+let pendingImportRows = [];
+
+function normalizeImportHeader(h) {
+  return String(h || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s\-]+/g, '_')
+    .replace(/[^a-z0-9_]/g, '');
+}
+
+function phoneCellToString(v) {
+  if (v === null || v === undefined || v === '') return '';
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return '';
+    return String(Math.round(v));
+  }
+  let s = String(v).trim();
+  if (!s) return '';
+  if (s.startsWith("'")) s = s.slice(1).trim();
+  if (/^-?\d+(\.\d+)?e[+\-]?\d+$/i.test(s)) {
+    const n = Number(s);
+    if (Number.isFinite(n)) return String(Math.round(n));
+  }
+  return s;
+}
+
+function mapImportHeader(h) {
+  const key = normalizeImportHeader(h);
+  const extN = key.match(/^ext_?(\d+)$/) || key.match(/^extension_?(\d+)$/);
+  if (extN) return 'ext_' + extN[1];
+  const aliases = {
+    id: 'id',
+    name: 'name',
+    employee_name: 'name',
+    email: 'email',
+    e_mail: 'email',
+    dept: 'dept',
+    department: 'dept',
+    state: 'state',
+    province: 'state',
+    region: 'state',
+    place: 'state',
+    country: 'country',
+    branch: 'country',
+    location: 'location',
+    station: 'location',
+    station_name: 'location',
+    company: 'location',
+    ext: 'ext_1',
+    extension: 'ext_1',
+    mobile: 'mobile',
+    phone: 'mobile',
+    direct_line: 'direct_line',
+    directline: 'direct_line',
+    sd: 'direct_line',
+    speed_dial: 'speed_dial',
+    speeddial: 'speed_dial',
+    sd_no: 'speed_dial',
+    sdno: 'speed_dial',
+  };
+  return aliases[key] || null;
+}
+
+async function downloadImportTemplate() {
+  try {
+    const res = await fetch('/api/employees/import-template', {
+      headers: { 'Authorization': 'Bearer ' + getToken() },
+    });
+    if (res.status === 401) { logout(); return; }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to download template');
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'avaya-employees-import-template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    showToast('Template downloaded', '#059669');
+  } catch (e) {
+    showToast(e.message || 'Failed to download template', '#dc2626');
+  }
+}
+
+function openImportModal() {
+  pendingImportRows = [];
+  document.getElementById('importFile').value = '';
+  document.getElementById('importFileLabel').textContent = 'Choose Excel file (.xlsx / .xls / .csv)';
+  document.getElementById('importPreview').classList.add('hidden');
+  document.getElementById('importError').classList.add('hidden');
+  document.getElementById('importResult').classList.add('hidden');
+  document.getElementById('importBtn').disabled = true;
+  document.getElementById('importModal').classList.remove('hidden');
+}
+
+function closeImportModal() {
+  document.getElementById('importModal').classList.add('hidden');
+  pendingImportRows = [];
+}
+
+function onImportFileSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  const errEl = document.getElementById('importError');
+  const preview = document.getElementById('importPreview');
+  const result = document.getElementById('importResult');
+  errEl.classList.add('hidden');
+  result.classList.add('hidden');
+  pendingImportRows = [];
+  document.getElementById('importBtn').disabled = true;
+  if (!file) {
+    document.getElementById('importFileLabel').textContent = 'Choose Excel file (.xlsx / .xls / .csv)';
+    preview.classList.add('hidden');
+    return;
+  }
+  document.getElementById('importFileLabel').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const sheetName = wb.SheetNames.find(n => {
+        const x = String(n).toLowerCase();
+        return x !== 'instructions' && x !== 'lists';
+      }) || wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const raw = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+      if (!raw.length) throw new Error('Sheet is empty');
+
+      const phoneKeys = new Set(['ext_1', 'ext_2', 'ext_3', 'ext_4', 'ext_5', 'mobile', 'direct_line', 'speed_dial']);
+      const rows = raw.map((r) => {
+        const out = {};
+        Object.keys(r).forEach((k) => {
+          const mapped = mapImportHeader(k);
+          if (!mapped) return;
+          out[mapped] = phoneKeys.has(mapped) || /^ext_\d+$/.test(mapped)
+            ? phoneCellToString(r[k])
+            : (r[k] === null || r[k] === undefined ? '' : String(r[k]).trim());
+        });
+        return out;
+      }).filter(r => String(r.name || '').trim());
+
+      if (!rows.length) throw new Error('No valid employee rows found (need a Name column)');
+      pendingImportRows = rows;
+      preview.textContent = rows.length + ' row(s) ready to import from sheet “' + sheetName + '”';
+      preview.classList.remove('hidden');
+      document.getElementById('importBtn').disabled = false;
+    } catch (err) {
+      errEl.textContent = err.message || 'Could not read file';
+      errEl.classList.remove('hidden');
+      preview.classList.add('hidden');
+    }
+  };
+  reader.onerror = () => {
+    errEl.textContent = 'Failed to read file';
+    errEl.classList.remove('hidden');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function runImport() {
+  if (!pendingImportRows.length) return;
+  const btn = document.getElementById('importBtn');
+  const errEl = document.getElementById('importError');
+  const result = document.getElementById('importResult');
+  errEl.classList.add('hidden');
+  result.classList.add('hidden');
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+  try {
+    const res = await fetch('/api/employees/import', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ rows: pendingImportRows }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Import failed');
+    let msg = `Done — ${data.created} created, ${data.updated} updated`;
+    if (data.skipped) msg += `, ${data.skipped} skipped`;
+    if (data.errors && data.errors.length) {
+      const sample = data.errors.slice(0, 5).map(e => `Row ${e.row}: ${e.error}`).join(' · ');
+      msg += `. Issues: ${sample}${data.errors.length > 5 ? '…' : ''}`;
+    }
+    result.textContent = msg;
+    result.classList.remove('hidden');
+    showToast('Import completed', '#059669');
+    await loadEmployees();
+    await loadBranchesLocations();
+    await loadBranchFilterOptions();
+    pendingImportRows = [];
+    document.getElementById('importFile').value = '';
+  } catch (err) {
+    errEl.textContent = err.message || 'Import failed';
+    errEl.classList.remove('hidden');
+    btn.disabled = false;
+  } finally {
+    btn.textContent = 'Import';
+    if (pendingImportRows.length) btn.disabled = false;
+  }
+}
+
+const EXPORT_COLS = {
+  name: { label: 'Name', get: (e) => e.name || '' },
+  email: { label: 'Email', get: (e) => e.email || '' },
+  dept: { label: 'Department', get: (e) => e.dept || '' },
+  works_for_station: { label: 'Works for station', get: (e) => e.works_for_station || '' },
+  branch: { label: 'Branch', get: (e) => e.branch || '' },
+  ext: { label: 'Extension', get: (e) => (e.numbers || []).map(n => n.ext).filter(Boolean).join(' / ') },
+  mobile: { label: 'Mobile', get: (e) => (e.numbers || []).map(n => n.mobile).filter(Boolean).join(', ') },
+  sd: { label: 'Direct Line', get: (e) => (e.numbers || []).map(n => n.sd).filter(Boolean).join(' / ') },
+  sdNo: { label: 'Speed Dial', get: (e) => (e.numbers || []).map(n => n.sd_no || n.sdNo).filter(Boolean).join(' / ') },
+  label: { label: 'Line Label', get: (e) => (e.numbers || []).map(n => n.label).filter(Boolean).join(' / ') },
+  created: { label: 'Created', get: (e) => formatDate(e.created_at) },
+  updated: { label: 'Updated', get: (e) => formatDate(e.updated_at) },
+};
+
+function getActiveFilterSummary() {
+  const parts = [];
+  const bf = document.getElementById('branchFilter').value;
+  const wf = document.getElementById('worksForFilter')?.value || '';
+  const cf = document.getElementById('createdFilter').value;
+  const uf = document.getElementById('updatedFilter').value;
+  const sq = document.getElementById('searchInput').value.trim();
+  if (bf) parts.push('Country: ' + bf);
+  if (wf) parts.push('Works for: ' + wf);
+  if (cf === 'week') parts.push('Created: Last Week');
+  if (cf === 'month') parts.push('Created: Last Month');
+  if (uf === 'week') parts.push('Updated: Last Week');
+  if (uf === 'month') parts.push('Updated: Last Month');
+  if (sq) parts.push('Search: "' + sq + '"');
+  return parts.length ? parts.join(' · ') : 'All employees (no filters)';
+}
+
+function openExportModal() {
+  document.getElementById('exportFilterHint').textContent = getActiveFilterSummary();
+  document.getElementById('exportCount').textContent = (employees.length || 0) + ' employee(s) will be exported';
+  document.getElementById('exportModal').classList.remove('hidden');
+}
+
+function closeExportModal() {
+  document.getElementById('exportModal').classList.add('hidden');
+}
+
+function setExportColumns(checked) {
+  document.querySelectorAll('.export-col').forEach(c => { c.checked = checked; });
+}
+
+function getSelectedExportColumns() {
+  return [...document.querySelectorAll('.export-col:checked')].map(c => c.value).filter(k => EXPORT_COLS[k]);
+}
+
+function buildExportRows(colKeys) {
+  return employees.map(emp => colKeys.map(k => EXPORT_COLS[k].get(emp)));
+}
+
+function exportFileName(ext) {
+  const d = new Date();
+  const stamp = d.toISOString().slice(0, 10);
+  return 'compass-directory-' + stamp + '.' + ext;
+}
+
+function runExport() {
+  if (!employees.length) {
+    showToast('No employees to export with current filters', '#dc2626');
+    return;
+  }
+  const colKeys = getSelectedExportColumns();
+  if (!colKeys.length) {
+    showToast('Select at least one column', '#dc2626');
+    return;
+  }
+  const format = (document.querySelector('input[name="exportFormat"]:checked') || {}).value || 'excel';
+  const headers = colKeys.map(k => EXPORT_COLS[k].label);
+  const rows = buildExportRows(colKeys);
+  const btn = document.getElementById('exportBtn');
+  btn.disabled = true;
+  btn.textContent = 'Preparing...';
+  try {
+    if (format === 'pdf') exportPdf(headers, rows);
+    else exportExcel(headers, rows);
+    showToast('Export downloaded (' + employees.length + ' rows)', '#059669');
+    closeExportModal();
+  } catch (err) {
+    console.error(err);
+    showToast('Export failed', '#dc2626');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Download';
+  }
+}
+
+function exportExcel(headers, rows) {
+  if (typeof XLSX === 'undefined') throw new Error('Excel library not loaded');
+  const data = [headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws['!cols'] = headers.map((h, i) => {
+    const maxLen = Math.max(h.length, ...rows.map(r => String(r[i] || '').length));
+    return { wch: Math.min(Math.max(maxLen + 2, 10), 40) };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+  XLSX.writeFile(wb, exportFileName('xlsx'));
+}
+
+function exportPdf(headers, rows) {
+  const jspdf = window.jspdf;
+  if (!jspdf || !jspdf.jsPDF) throw new Error('PDF library not loaded');
+  const doc = new jspdf.jsPDF({ orientation: headers.length > 5 ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' });
+  doc.setFontSize(14);
+  doc.setTextColor(30, 89, 41);
+  doc.text('Compass Directory Export', 40, 36);
+  doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text(getActiveFilterSummary() + '  ·  ' + employees.length + ' employees  ·  ' + new Date().toLocaleString('en-GB'), 40, 52);
+  doc.autoTable({
+    startY: 64,
+    head: [headers],
+    body: rows,
+    styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' },
+    headStyles: { fillColor: [41, 111, 53], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    margin: { left: 40, right: 40 },
+  });
+  doc.save(exportFileName('pdf'));
+}
+
+document.addEventListener('DOMContentLoaded', async () => {
+  const stored = localStorage.getItem('admin') || sessionStorage.getItem('admin');
+  if (!stored || !getToken()) { window.location.href = '/login'; return; }
+  adminUser = JSON.parse(stored);
+  if (adminUser.role === 'viewer') { window.location.href = '/'; return; }
+  if (adminUser.role !== 'admin' && adminUser.role !== 'super_admin') { window.location.href = '/'; return; }
+  document.getElementById('adminInfo').textContent = adminUser.name + ' (' + adminUser.role + ')';
+  document.getElementById('searchInput').addEventListener('input', () => {
+    clearTimeout(loadEmployees._searchTimer);
+    loadEmployees._searchTimer = setTimeout(loadEmployees, 200);
+  });
+  document.getElementById('branchFilter').addEventListener('change', loadEmployees);
+  document.getElementById('worksForFilter').addEventListener('change', loadEmployees);
+  document.getElementById('createdFilter').addEventListener('change', loadEmployees);
+  document.getElementById('updatedFilter').addEventListener('change', loadEmployees);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeEmpModal(); closeExtModal(); closeExportModal(); closeImportModal(); closeStationModal(); closeBranchModal(); closeStateModal(); closeLocationModal(); closeDeptModal(); closeIpModal(); closePasscodeModal(); } });
+  await loadBranchesLocations();
+  await loadDepartments();
+  await loadEmployees();
+  buildBranchDeptMap();
+  await loadBranchFilterOptions();
+  populateEmpPlaces();
+});
+</script>
+<script src="/register-sw.js"></script>
+</body>
+</html>
