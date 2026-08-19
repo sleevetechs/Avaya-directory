@@ -51,6 +51,7 @@ const COPY_PATHS = [
   'manifest.webmanifest',
   'sw.js',
   'register-sw.js',
+  'web.config',
   'icons',
 ];
 

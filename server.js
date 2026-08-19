@@ -317,19 +317,28 @@ function durationLabel(amount, unit) {
   return a + ' ' + base + (a === 1 ? '' : 's');
 }
 
-function getClientIp(req) {
-  const headers = [
-    req.headers['cf-connecting-ip'],
-    req.headers['true-client-ip'],
-    req.headers['x-real-ip'],
-    ...(String(req.headers['x-forwarded-for'] || '').split(',')),
-  ];
-  for (const raw of headers) {
+function getForwardedIps(req) {
+  const list = [];
+  const add = (raw) => {
     const ip = normalizeIp(raw);
-    if (ip && isValidIp(ip)) return ip;
+    if (ip && isValidIp(ip) && !list.includes(ip)) list.push(ip);
+  };
+  // Left-most in X-Forwarded-For is the original visitor (IIS / CDN / proxy)
+  for (const part of String(req.headers['x-forwarded-for'] || '').split(',')) {
+    add(part);
   }
-  let ip = req.ip || req.socket?.remoteAddress || '';
-  return normalizeIp(ip);
+  add(req.headers['cf-connecting-ip']);
+  add(req.headers['true-client-ip']);
+  add(req.headers['x-real-ip']);
+  return list;
+}
+
+function getClientIp(req) {
+  const ips = getForwardedIps(req);
+  const pub = ips.find((ip) => !isLoopbackOrPrivateIp(ip));
+  if (pub) return pub;
+  if (ips.length) return ips[0];
+  return normalizeIp(req.ip || req.socket?.remoteAddress || '');
 }
 
 function isLoopbackOrPrivateIp(ip) {
@@ -357,6 +366,10 @@ async function lookupPublicIp() {
  * Only trust THIS request's browser header or THIS TCP connection — never the server's egress IP.
  */
 async function resolveClientIp(req) {
+  // Prefer proxy headers (IIS ARR) — real visitor IP, not the server's own IP
+  const forwardedPublic = getForwardedIps(req).find((ip) => !isLoopbackOrPrivateIp(ip));
+  if (forwardedPublic) return forwardedPublic;
+
   const reported = normalizeIp(req.headers['x-client-public-ip'] || '');
   if (reported && isValidIp(reported) && !isLoopbackOrPrivateIp(reported)) {
     return reported;
@@ -367,7 +380,6 @@ async function resolveClientIp(req) {
     return connectionIp;
   }
 
-  // Localhost / private with no browser public IP yet — do NOT invent the server's ISP IP
   return connectionIp || '';
 }
 

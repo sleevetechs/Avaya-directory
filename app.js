@@ -563,12 +563,20 @@ async function detectBrowserIps() {
   await Promise.all([detectBrowserPublicIp(), detectBrowserLocalIp()]);
 }
 
+function pickDisplayIp(serverIp, browserIp) {
+  // Show the visitor's own public IP when the browser detects it (ipify in their PC/phone)
+  if (browserIp && browserIp !== '…') return browserIp;
+  if (serverIp && serverIp !== '…' && !/^127\.|^::1|^192\.168\.|^10\./.test(serverIp)) return serverIp;
+  return browserIp || serverIp || '…';
+}
+
 function showAccessGate(clientIp) {
   const gate = document.getElementById('accessGate');
   const shell = document.getElementById('appShell');
   if (shell) shell.classList.add('hidden');
   if (gate) gate.classList.remove('hidden');
-  if (clientIp && clientIp !== '…') document.getElementById('accessGateIp').textContent = clientIp;
+  const shown = pickDisplayIp(clientIp, browserPublicIp);
+  if (shown && shown !== '…') document.getElementById('accessGateIp').textContent = shown;
 }
 
 function hideAccessGate() {
@@ -603,7 +611,7 @@ async function ensureDirectoryAccess() {
       stopAccessWatch();
       return false;
     }
-    const shownIp = data.clientIp || browserPublicIp || '…';
+    const shownIp = pickDisplayIp(data.clientIp, browserPublicIp);
     document.getElementById('accessGateIp').textContent = shownIp;
     if (data.allowed) {
       hideAccessGate();
