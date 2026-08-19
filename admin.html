@@ -844,8 +844,21 @@
 let employees = [];
 let adminUser = null;
 
-function getToken() { return localStorage.getItem('token') || sessionStorage.getItem('token'); }
-function getAdmin() { return JSON.parse(localStorage.getItem('admin') || sessionStorage.getItem('admin') || '{}'); }
+function getAuthStore() {
+  if (localStorage.getItem('admin')) return localStorage;
+  if (sessionStorage.getItem('admin')) return sessionStorage;
+  if (localStorage.getItem('token')) return localStorage;
+  if (sessionStorage.getItem('token')) return sessionStorage;
+  return null;
+}
+function getToken() {
+  const store = getAuthStore();
+  return store ? store.getItem('token') : null;
+}
+function getAdmin() {
+  const store = getAuthStore();
+  return JSON.parse(store?.getItem('admin') || '{}');
+}
 function getHeaders() {
   const h = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() };
   if (browserPublicIp) h['X-Client-Public-Ip'] = browserPublicIp;
@@ -1248,6 +1261,7 @@ async function requestDelete(id) {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + getToken() }
     });
+    if (res.status === 401) { logout(); return; }
     const data = await res.json();
     if (res.ok) { showToast('Delete requested — row highlighted red', '#ea580c'); await loadEmployees(); }
     else { showToast(data.error, '#dc2626'); }
@@ -1261,6 +1275,7 @@ async function confirmDelete(id) {
       method: 'DELETE',
       headers: { 'Authorization': 'Bearer ' + getToken() }
     });
+    if (res.status === 401) { logout(); return; }
     const data = await res.json();
     if (res.ok) { showToast('Employee deleted', '#059669'); await loadEmployees(); }
     else { showToast(data.error, '#dc2626'); }
@@ -1274,6 +1289,7 @@ async function cancelDelete(id) {
       method: 'POST',
       headers: { 'Authorization': 'Bearer ' + getToken() }
     });
+    if (res.status === 401) { logout(); return; }
     const data = await res.json();
     if (res.ok) { showToast('Delete request cancelled', '#059669'); await loadEmployees(); }
     else { showToast(data.error, '#dc2626'); }
@@ -2817,8 +2833,16 @@ function exportPdf(headers, rows) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  const stored = localStorage.getItem('admin') || sessionStorage.getItem('admin');
-  if (!stored || !getToken()) { window.location.href = '/login'; return; }
+  const token = getToken();
+  const stored = getAuthStore()?.getItem('admin');
+  if (!stored || !token) { window.location.href = '/login'; return; }
+  try {
+    const verifyRes = await fetch('/api/verify', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (!verifyRes.ok) { logout(); return; }
+  } catch {
+    window.location.href = '/login';
+    return;
+  }
   adminUser = JSON.parse(stored);
   if (adminUser.role === 'viewer') { window.location.href = '/'; return; }
   if (adminUser.role !== 'admin' && adminUser.role !== 'super_admin') { window.location.href = '/'; return; }

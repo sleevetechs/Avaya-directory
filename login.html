@@ -111,6 +111,10 @@ async function handleLogin(e) {
       return;
     }
     if (res.ok) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('admin');
+      sessionStorage.removeItem('token');
+      sessionStorage.removeItem('admin');
       const store = document.getElementById('rememberMe').checked ? localStorage : sessionStorage;
       store.setItem('token', data.token);
       store.setItem('admin', JSON.stringify(data.admin));
