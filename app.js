@@ -465,7 +465,7 @@ function lockDirectoryForPasscode(clientIp) {
   if (stationBox) stationBox.classList.add('hidden');
   const badge = document.getElementById('totalBadge');
   if (badge) badge.textContent = '';
-  showAccessGate(clientIp);
+  showAccessGate(clientIp, { officeIpOnly: false });
   const btn = document.getElementById('accessGateBtn');
   if (btn) btn.disabled = false;
   const input = document.getElementById('accessGateInput');
@@ -570,11 +570,25 @@ function pickDisplayIp(serverIp, browserIp) {
   return browserIp || serverIp || '…';
 }
 
-function showAccessGate(clientIp) {
+function showAccessGate(clientIp, options = {}) {
+  const officeIpOnly = options.officeIpOnly === true;
   const gate = document.getElementById('accessGate');
   const shell = document.getElementById('appShell');
+  const form = document.getElementById('accessGateForm');
+  const officeOnly = document.getElementById('accessGateOfficeOnly');
+  const subtitle = document.getElementById('accessGateSubtitle');
+  const err = document.getElementById('accessGateError');
   if (shell) shell.classList.add('hidden');
   if (gate) gate.classList.remove('hidden');
+  if (form) form.classList.toggle('hidden', officeIpOnly);
+  if (officeOnly) officeOnly.classList.toggle('hidden', !officeIpOnly);
+  if (subtitle) {
+    subtitle.textContent = officeIpOnly
+      ? 'Your connection is not from an allowed office IP address.'
+      : 'You are outside the office network. Enter the passcode to continue.';
+    subtitle.classList.toggle('hidden', officeIpOnly);
+  }
+  if (err) err.classList.add('hidden');
   const shown = pickDisplayIp(clientIp, browserPublicIp);
   if (shown && shown !== '…') document.getElementById('accessGateIp').textContent = shown;
 }
@@ -602,7 +616,7 @@ async function ensureDirectoryAccess() {
         stopAccessWatch();
         return true;
       }
-      showAccessGate(browserPublicIp || '…');
+      showAccessGate(browserPublicIp || '…', { officeIpOnly: false });
       const err = document.getElementById('accessGateError');
       if (err) {
         err.textContent = 'You are offline. Connect once to unlock, or reopen after a previous successful visit.';
@@ -619,7 +633,7 @@ async function ensureDirectoryAccess() {
       else stopAccessWatch();
       return true;
     }
-    showAccessGate(shownIp);
+    showAccessGate(shownIp, { officeIpOnly: data.officeIpOnly === true });
     stopAccessWatch();
     return false;
   } catch {
@@ -629,7 +643,7 @@ async function ensureDirectoryAccess() {
       stopAccessWatch();
       return true;
     }
-    showAccessGate(browserPublicIp || '…');
+    showAccessGate(browserPublicIp || '…', { officeIpOnly: false });
     const err = document.getElementById('accessGateError');
     if (err) {
       err.textContent = 'Cannot reach server. Connect to the internet to unlock the directory.';

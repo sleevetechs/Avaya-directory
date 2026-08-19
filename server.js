@@ -433,10 +433,25 @@ function parseCookie(req, name) {
   return null;
 }
 
-async function accessControlEnabled() {
+async function hasOfficeIps() {
   const [[ips]] = await pool.execute('SELECT COUNT(*) AS c FROM access_allowed_ips WHERE is_active = 1');
+  return Number(ips.c) > 0;
+}
+
+async function hasActivePasscodes() {
   const [[pcs]] = await pool.execute('SELECT COUNT(*) AS c FROM access_passcodes WHERE is_active = 1');
-  return (Number(ips.c) + Number(pcs.c)) > 0;
+  return Number(pcs.c) > 0;
+}
+
+async function accessControlEnabled() {
+  return (await hasOfficeIps()) || (await hasActivePasscodes());
+}
+
+async function isOfficeIpOnlyMode() {
+  // Any configured office IP → directory is office-network only (no passcode for outsiders).
+  // Set DIRECTORY_ALLOW_PASSCODE_OUTSIDE=1 to also allow passcode unlock from other IPs.
+  if (process.env.DIRECTORY_ALLOW_PASSCODE_OUTSIDE === '1') return false;
+  return await hasOfficeIps();
 }
 
 async function isIpAllowed(ip) {
@@ -479,32 +494,60 @@ function hasValidDirectoryToken(req) {
 async function evaluatePublicAccess(req) {
   const clientIp = await resolveClientIp(req);
   const enabled = await accessControlEnabled();
+  const officeIpOnly = await isOfficeIpOnlyMode();
   // Until at least one office IP or passcode exists, stay open
   if (!enabled) {
-    return { allowed: true, reason: 'open', clientIp, enabled: false };
+    return { allowed: true, reason: 'open', clientIp, enabled: false, officeIpOnly: false };
   }
   // Office public IP → free access
   if (await isIpAllowed(clientIp)) {
-    return { allowed: true, reason: 'ip', clientIp, enabled: true };
+    return { allowed: true, reason: 'ip', clientIp, enabled: true, officeIpOnly };
   }
   // Logged-in admin browsing the public directory
   if (getAdminFromAuthHeader(req)) {
-    return { allowed: true, reason: 'admin', clientIp, enabled: true };
+    return { allowed: true, reason: 'admin', clientIp, enabled: true, officeIpOnly };
+  }
+  // Office-network only — no passcode fallback for outsiders
+  if (officeIpOnly) {
+    return {
+      allowed: false,
+      reason: 'office_only',
+      clientIp,
+      enabled: true,
+      officeIpOnly: true,
+      requiresPasscode: false,
+    };
   }
   // Valid passcode session
   if (hasValidDirectoryToken(req)) {
-    return { allowed: true, reason: 'passcode', clientIp, enabled: true };
+    return { allowed: true, reason: 'passcode', clientIp, enabled: true, officeIpOnly: false };
   }
   // Everyone else must enter a passcode
-  return { allowed: false, reason: 'none', clientIp, enabled: true, requiresPasscode: true };
+  return {
+    allowed: false,
+    reason: 'none',
+    clientIp,
+    enabled: true,
+    officeIpOnly: false,
+    requiresPasscode: true,
+  };
 }
 
 async function publicDirectoryAccess(req, res, next) {
   try {
     const result = await evaluatePublicAccess(req);
     if (result.allowed) return next();
+    if (result.officeIpOnly) {
+      return res.status(403).json({
+        error: 'Directory is only available from the office network',
+        officeIpOnly: true,
+        requiresPasscode: false,
+        clientIp: result.clientIp,
+      });
+    }
     return res.status(403).json({
       error: 'Passcode required to view the directory',
+      officeIpOnly: false,
       requiresPasscode: true,
       clientIp: result.clientIp,
     });
@@ -2120,6 +2163,9 @@ app.get('/api/access/check', async (req, res) => {
 app.post('/api/access/unlock', async (req, res) => {
   try {
     debug('ENTERED POST /api/access/unlock');
+    if (await isOfficeIpOnlyMode()) {
+      return res.status(403).json({ error: 'Passcode access is disabled. Use the office network.' });
+    }
     const passcode = String(req.body.passcode || '').trim();
     if (!passcode) return res.status(400).json({ error: 'Passcode required' });
     const hash = hashPasscode(passcode);
