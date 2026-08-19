@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns').promises;
 
 (function loadEnvFile() {
   const envPath = path.join(__dirname, '.env');
@@ -219,13 +220,27 @@ async function ensureAccessTables() {
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS access_allowed_ips (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      ip_address VARCHAR(64) NOT NULL,
+      entry_type VARCHAR(8) NOT NULL DEFAULT 'ip',
+      ip_address VARCHAR(64) NOT NULL DEFAULT '',
+      host_name VARCHAR(255) NOT NULL DEFAULT '',
       label VARCHAR(255) NOT NULL DEFAULT '',
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_access_ip (ip_address)
+      INDEX idx_access_entry_type (entry_type)
     )
   `);
+  try {
+    await pool.execute(`ALTER TABLE access_allowed_ips ADD COLUMN entry_type VARCHAR(8) NOT NULL DEFAULT 'ip'`);
+  } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
+  try {
+    await pool.execute(`ALTER TABLE access_allowed_ips ADD COLUMN host_name VARCHAR(255) NOT NULL DEFAULT ''`);
+  } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
+  try {
+    await pool.execute(`ALTER TABLE access_allowed_ips MODIFY ip_address VARCHAR(64) NOT NULL DEFAULT ''`);
+  } catch (e) { /* column may already allow default */ }
+  try {
+    await pool.execute(`ALTER TABLE access_allowed_ips DROP INDEX uq_access_ip`);
+  } catch (e) { /* index may not exist on older/newer schemas */ }
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS access_passcodes (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -417,6 +432,43 @@ function isValidIp(ip) {
   return false;
 }
 
+function normalizeHostname(host) {
+  return String(host || '').trim().toLowerCase().replace(/\.$/, '');
+}
+
+function isValidHostname(host) {
+  const h = normalizeHostname(host);
+  if (!h || h.length > 253 || isValidIp(h)) return false;
+  if (!/^[a-z0-9.-]+$/.test(h) || h.startsWith('-') || h.endsWith('-')) return false;
+  const labels = h.split('.');
+  return labels.every((label) => label.length >= 1 && label.length <= 63 && /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(label));
+}
+
+const hostResolveCache = new Map();
+const HOST_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function resolveHostToIps(hostname) {
+  const host = normalizeHostname(hostname);
+  if (!host) return new Set();
+  const cached = hostResolveCache.get(host);
+  if (cached && Date.now() - cached.at < HOST_CACHE_TTL_MS) return cached.ips;
+  const ips = new Set();
+  try {
+    const [v4, v6] = await Promise.allSettled([dns.resolve4(host), dns.resolve6(host)]);
+    if (v4.status === 'fulfilled') v4.value.forEach((ip) => ips.add(normalizeIp(ip)));
+    if (v6.status === 'fulfilled') v6.value.forEach((ip) => ips.add(normalizeIp(ip)));
+  } catch (e) {
+    debug('DNS resolve failed for ' + host, e.message || e);
+  }
+  hostResolveCache.set(host, { ips, at: Date.now() });
+  return ips;
+}
+
+function clearHostResolveCache(hostname) {
+  if (hostname) hostResolveCache.delete(normalizeHostname(hostname));
+  else hostResolveCache.clear();
+}
+
 function hashPasscode(code) {
   return CryptoJS.SHA256(String(code || '').trim()).toString();
 }
@@ -434,7 +486,13 @@ function parseCookie(req, name) {
 }
 
 async function hasOfficeIps() {
-  const [[ips]] = await pool.execute('SELECT COUNT(*) AS c FROM access_allowed_ips WHERE is_active = 1');
+  const [[ips]] = await pool.execute(
+    `SELECT COUNT(*) AS c FROM access_allowed_ips
+     WHERE is_active = 1 AND (
+       (entry_type = 'ip' AND ip_address != '') OR
+       (entry_type = 'host' AND host_name != '')
+     )`
+  );
   return Number(ips.c) > 0;
 }
 
@@ -457,11 +515,21 @@ async function isOfficeIpOnlyMode() {
 async function isIpAllowed(ip) {
   const v = normalizeIp(ip);
   if (!v) return false;
-  const [rows] = await pool.execute(
-    'SELECT id FROM access_allowed_ips WHERE is_active = 1 AND ip_address = ? LIMIT 1',
+  const [ipRows] = await pool.execute(
+    `SELECT id FROM access_allowed_ips
+     WHERE is_active = 1 AND entry_type = 'ip' AND ip_address = ? LIMIT 1`,
     [v]
   );
-  return rows.length > 0;
+  if (ipRows.length) return true;
+  const [hostRows] = await pool.execute(
+    `SELECT host_name FROM access_allowed_ips
+     WHERE is_active = 1 AND entry_type = 'host' AND host_name != ''`
+  );
+  for (const row of hostRows) {
+    const resolved = await resolveHostToIps(row.host_name);
+    if (resolved.has(v)) return true;
+  }
+  return false;
 }
 
 function getAdminFromAuthHeader(req) {
@@ -707,6 +775,11 @@ app.get('/api/employees', async (req, res) => {
   try {
     debug('ENTERED GET /api/employees');
     let where = 'WHERE e.deleted_at IS NULL';
+    const admin = getAdminFromAuthHeader(req);
+    const includePending = admin && req.query.include_pending === '1';
+    if (!includePending) {
+      where += ' AND e.delete_requested_by IS NULL';
+    }
     const params = [];
     if (req.query.search) {
       where += ` AND (
@@ -2221,29 +2294,102 @@ app.get('/api/access/logs', adminOnly, async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
+function normalizeAccessEntryBody(body, existing = null) {
+  const entryType = String(body.entry_type || existing?.entry_type || 'ip').toLowerCase() === 'host' ? 'host' : 'ip';
+  const label = body.label !== undefined ? String(body.label || '').trim() : String(existing?.label || '').trim();
+  const isActive = body.is_active !== undefined ? (body.is_active ? 1 : 0) : (existing?.is_active ? 1 : 1);
+  if (entryType === 'host') {
+    const hostName = normalizeHostname(body.host_name || body.hostname || body.host || existing?.host_name || '');
+    if (!isValidHostname(hostName)) {
+      return { error: 'Valid hostname required (e.g. dubai-office.dyndns.org)' };
+    }
+    return { entryType, ipAddress: '', hostName, label, isActive };
+  }
+  const ipAddress = body.ip_address !== undefined || body.ip !== undefined
+    ? normalizeIp(body.ip_address || body.ip)
+    : normalizeIp(existing?.ip_address || '');
+  if (!isValidIp(ipAddress)) {
+    return { error: 'Valid IPv4 or IPv6 address required' };
+  }
+  return { entryType, ipAddress, hostName: '', label, isActive };
+}
+
+async function accessEntryDuplicate(entryType, ipAddress, hostName, excludeId = null) {
+  if (entryType === 'host') {
+    let sql = `SELECT id FROM access_allowed_ips WHERE entry_type = 'host' AND LOWER(host_name) = ?`;
+    const params = [hostName];
+    if (excludeId) {
+      sql += ' AND id != ?';
+      params.push(excludeId);
+    }
+    sql += ' LIMIT 1';
+    const [rows] = await pool.execute(sql, params);
+    return rows.length > 0;
+  }
+  let sql = `SELECT id FROM access_allowed_ips WHERE entry_type = 'ip' AND ip_address = ?`;
+  const params = [ipAddress];
+  if (excludeId) {
+    sql += ' AND id != ?';
+    params.push(excludeId);
+  }
+  sql += ' LIMIT 1';
+  const [rows] = await pool.execute(sql, params);
+  return rows.length > 0;
+}
+
+async function enrichAccessEntries(rows) {
+  const out = [];
+  for (const row of rows) {
+    const entry = {
+      id: row.id,
+      entry_type: row.entry_type || 'ip',
+      ip_address: row.ip_address || '',
+      host_name: row.host_name || '',
+      label: row.label || '',
+      is_active: row.is_active,
+      created_at: row.created_at,
+      resolved_ips: [],
+    };
+    if (entry.entry_type === 'host' && entry.host_name) {
+      entry.resolved_ips = [...await resolveHostToIps(entry.host_name)];
+    }
+    out.push(entry);
+  }
+  return out;
+}
+
 app.get('/api/access/ips', adminOnly, async (req, res) => {
   try {
     const [rows] = await pool.execute(
-      'SELECT id, ip_address, label, is_active, created_at FROM access_allowed_ips ORDER BY id DESC'
+      `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at
+       FROM access_allowed_ips ORDER BY id DESC`
     );
-    res.json({ ips: rows, clientIp: await resolveClientIp(req) });
+    res.json({ ips: await enrichAccessEntries(rows), clientIp: await resolveClientIp(req) });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/access/ips', adminOnly, async (req, res) => {
   try {
-    const ip = normalizeIp(req.body.ip_address || req.body.ip);
-    const label = String(req.body.label || '').trim();
-    if (!isValidIp(ip)) return res.status(400).json({ error: 'Valid IPv4 or IPv6 address required' });
+    const parsed = normalizeAccessEntryBody(req.body);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const { entryType, ipAddress, hostName, label, isActive } = parsed;
+    if (await accessEntryDuplicate(entryType, ipAddress, hostName)) {
+      return res.status(400).json({ error: entryType === 'host' ? 'This hostname is already listed' : 'This IP is already listed' });
+    }
     const [r] = await pool.execute(
-      'INSERT INTO access_allowed_ips (ip_address, label, is_active) VALUES (?, ?, ?)',
-      [ip, label, req.body.is_active === 0 ? 0 : 1]
+      `INSERT INTO access_allowed_ips (entry_type, ip_address, host_name, label, is_active)
+       VALUES (?, ?, ?, ?, ?)`,
+      [entryType, ipAddress, hostName, label, isActive]
     );
-    await logAction(req.admin.id, 'create', 'access_ip', r.insertId, null, { ip, label });
-    const [rows] = await pool.execute('SELECT id, ip_address, label, is_active, created_at FROM access_allowed_ips WHERE id = ?', [r.insertId]);
-    res.json({ success: true, ip: rows[0] });
+    clearHostResolveCache(hostName);
+    await logAction(req.admin.id, 'create', 'access_ip', r.insertId, null, { entry_type: entryType, ip: ipAddress, host_name: hostName, label });
+    const [rows] = await pool.execute(
+      `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at FROM access_allowed_ips WHERE id = ?`,
+      [r.insertId]
+    );
+    const [entry] = await enrichAccessEntries(rows);
+    res.json({ success: true, ip: entry });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'This IP is already listed' });
     debug('Route failed', e);
     res.status(500).json({ error: e.message });
   }
@@ -2254,21 +2400,34 @@ app.put('/api/access/ips/:id', adminOnly, async (req, res) => {
     const [existing] = await pool.execute('SELECT * FROM access_allowed_ips WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
     const old = existing[0];
-    const ip = req.body.ip_address !== undefined || req.body.ip !== undefined
-      ? normalizeIp(req.body.ip_address || req.body.ip)
-      : old.ip_address;
-    if (!isValidIp(ip)) return res.status(400).json({ error: 'Valid IPv4 or IPv6 address required' });
-    const label = req.body.label !== undefined ? String(req.body.label || '').trim() : old.label;
-    const isActive = req.body.is_active !== undefined ? (req.body.is_active ? 1 : 0) : old.is_active;
+    const parsed = normalizeAccessEntryBody(req.body, old);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    const { entryType, ipAddress, hostName, label, isActive } = parsed;
+    if (await accessEntryDuplicate(entryType, ipAddress, hostName, req.params.id)) {
+      return res.status(400).json({ error: entryType === 'host' ? 'This hostname is already listed' : 'This IP is already listed' });
+    }
     await pool.execute(
-      'UPDATE access_allowed_ips SET ip_address = ?, label = ?, is_active = ? WHERE id = ?',
-      [ip, label, isActive, req.params.id]
+      `UPDATE access_allowed_ips
+       SET entry_type = ?, ip_address = ?, host_name = ?, label = ?, is_active = ?
+       WHERE id = ?`,
+      [entryType, ipAddress, hostName, label, isActive, req.params.id]
     );
-    await logAction(req.admin.id, 'update', 'access_ip', parseInt(req.params.id), old, { ip, label, is_active: isActive });
-    const [rows] = await pool.execute('SELECT id, ip_address, label, is_active, created_at FROM access_allowed_ips WHERE id = ?', [req.params.id]);
-    res.json({ success: true, ip: rows[0] });
+    clearHostResolveCache(old.host_name);
+    clearHostResolveCache(hostName);
+    await logAction(req.admin.id, 'update', 'access_ip', parseInt(req.params.id), old, {
+      entry_type: entryType,
+      ip: ipAddress,
+      host_name: hostName,
+      label,
+      is_active: isActive,
+    });
+    const [rows] = await pool.execute(
+      `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at FROM access_allowed_ips WHERE id = ?`,
+      [req.params.id]
+    );
+    const [entry] = await enrichAccessEntries(rows);
+    res.json({ success: true, ip: entry });
   } catch (e) {
-    if (e.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: 'This IP is already listed' });
     debug('Route failed', e);
     res.status(500).json({ error: e.message });
   }
@@ -2278,6 +2437,7 @@ app.delete('/api/access/ips/:id', adminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM access_allowed_ips WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
+    clearHostResolveCache(existing[0].host_name);
     await pool.execute('DELETE FROM access_allowed_ips WHERE id = ?', [req.params.id]);
     await logAction(req.admin.id, 'delete', 'access_ip', parseInt(req.params.id), existing[0], null);
     res.json({ success: true });

@@ -129,11 +129,13 @@ CREATE TABLE IF NOT EXISTS departments (
 -- ── Directory access control ──
 CREATE TABLE IF NOT EXISTS access_allowed_ips (
   id INT AUTO_INCREMENT PRIMARY KEY,
-  ip_address VARCHAR(64) NOT NULL,
+  entry_type VARCHAR(8) NOT NULL DEFAULT 'ip',
+  ip_address VARCHAR(64) NOT NULL DEFAULT '',
+  host_name VARCHAR(255) NOT NULL DEFAULT '',
   label VARCHAR(255) NOT NULL DEFAULT '',
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_access_ip (ip_address)
+  INDEX idx_access_entry_type (entry_type)
 );
 
 CREATE TABLE IF NOT EXISTS access_passcodes (

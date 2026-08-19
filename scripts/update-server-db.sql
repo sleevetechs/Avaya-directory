@@ -110,6 +110,36 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+SET @col_exists := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'access_allowed_ips'
+    AND COLUMN_NAME = 'entry_type'
+);
+SET @sql := IF(
+  @col_exists = 0,
+  'ALTER TABLE access_allowed_ips ADD COLUMN entry_type VARCHAR(8) NOT NULL DEFAULT ''ip'' AFTER id',
+  'SELECT ''entry_type already exists'' AS status'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @col_exists := (
+  SELECT COUNT(*) FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'access_allowed_ips'
+    AND COLUMN_NAME = 'host_name'
+);
+SET @sql := IF(
+  @col_exists = 0,
+  'ALTER TABLE access_allowed_ips ADD COLUMN host_name VARCHAR(255) NOT NULL DEFAULT '''' AFTER ip_address',
+  'SELECT ''host_name already exists'' AS status'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 SELECT 'Migration complete' AS status;
 SELECT COUNT(*) AS employees FROM employees WHERE deleted_at IS NULL;
 SELECT COUNT(*) AS admins FROM admins;

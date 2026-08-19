@@ -70,13 +70,27 @@ async function main() {
   await conn.execute(`
     CREATE TABLE IF NOT EXISTS access_allowed_ips (
       id INT AUTO_INCREMENT PRIMARY KEY,
-      ip_address VARCHAR(64) NOT NULL,
+      entry_type VARCHAR(8) NOT NULL DEFAULT 'ip',
+      ip_address VARCHAR(64) NOT NULL DEFAULT '',
+      host_name VARCHAR(255) NOT NULL DEFAULT '',
       label VARCHAR(255) NOT NULL DEFAULT '',
       is_active TINYINT(1) NOT NULL DEFAULT 1,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_access_ip (ip_address)
+      INDEX idx_access_entry_type (entry_type)
     )
   `);
+  try {
+    await conn.execute(`ALTER TABLE access_allowed_ips ADD COLUMN entry_type VARCHAR(8) NOT NULL DEFAULT 'ip'`);
+  } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
+  try {
+    await conn.execute(`ALTER TABLE access_allowed_ips ADD COLUMN host_name VARCHAR(255) NOT NULL DEFAULT ''`);
+  } catch (e) { if (e.code !== 'ER_DUP_FIELDNAME') throw e; }
+  try {
+    await conn.execute(`ALTER TABLE access_allowed_ips MODIFY ip_address VARCHAR(64) NOT NULL DEFAULT ''`);
+  } catch (e) { /* ignore */ }
+  try {
+    await conn.execute(`ALTER TABLE access_allowed_ips DROP INDEX uq_access_ip`);
+  } catch (e) { /* ignore */ }
   await conn.execute(`
     CREATE TABLE IF NOT EXISTS access_passcodes (
       id INT AUTO_INCREMENT PRIMARY KEY,
