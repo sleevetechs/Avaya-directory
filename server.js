@@ -774,11 +774,19 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/employees', async (req, res) => {
   try {
     debug('ENTERED GET /api/employees');
-    let where = 'WHERE e.deleted_at IS NULL';
     const admin = getAdminFromAuthHeader(req);
-    const includePending = admin && req.query.include_pending === '1';
-    if (!includePending) {
-      where += ' AND e.delete_requested_by IS NULL';
+    const statusFilter = admin ? String(req.query.status_filter || '').trim() : '';
+    let where;
+    if (statusFilter === 'pending') {
+      where = 'WHERE e.deleted_at IS NULL AND e.delete_requested_by IS NOT NULL';
+    } else if (statusFilter === 'deleted') {
+      where = 'WHERE e.deleted_at IS NOT NULL';
+    } else {
+      where = 'WHERE e.deleted_at IS NULL';
+      const includePending = admin && req.query.include_pending === '1';
+      if (!includePending) {
+        where += ' AND e.delete_requested_by IS NULL';
+      }
     }
     const params = [];
     if (req.query.search) {
@@ -813,7 +821,8 @@ app.get('/api/employees', async (req, res) => {
     const [emps] = await pool.execute(
       `SELECT e.*, l.name AS location_name, l.city AS location_city, l.address AS location_address, l.maps_url AS location_maps_url,
               st.name AS state_name_join, st.id AS state_id, c.id AS country_id, c.name AS country_name,
-              cre.name AS created_by_name, upd.name AS updated_by_name, dr.name AS delete_requested_by_name
+              cre.name AS created_by_name, upd.name AS updated_by_name, dr.name AS delete_requested_by_name,
+              del.name AS deleted_by_name
        FROM employees e
        LEFT JOIN locations l ON e.location_id = l.id
        LEFT JOIN states st ON st.id = l.state_id
@@ -821,6 +830,7 @@ app.get('/api/employees', async (req, res) => {
        LEFT JOIN admins cre ON e.created_by = cre.id
        LEFT JOIN admins upd ON e.updated_by = upd.id
        LEFT JOIN admins dr ON e.delete_requested_by = dr.id
+       LEFT JOIN admins del ON e.deleted_by = del.id
        ${where}
        ORDER BY e.name`, params);
 

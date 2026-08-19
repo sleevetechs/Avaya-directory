@@ -41,6 +41,9 @@
     .row-pending-delete { background-color: #fef2f2 !important; }
     .row-pending-delete td { border-bottom-color: #fecaca; }
     .row-pending-delete:hover { background-color: #fee2e2 !important; }
+    .row-deleted { background-color: #f8fafc !important; }
+    .row-deleted td { border-bottom-color: #e2e8f0; color: #64748b; }
+    .row-deleted:hover { background-color: #f1f5f9 !important; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: #f1f5f9; }
     ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
@@ -108,6 +111,11 @@
           <option value="">Updated: Any</option>
           <option value="week">Updated: Last Week</option>
           <option value="month">Updated: Last Month</option>
+        </select>
+        <select id="statusFilter" class="input-focus border border-red-200 bg-red-50/40 rounded-xl px-3 py-2.5 text-sm focus:outline-none cursor-pointer font-medium text-red-800">
+          <option value="">Status: All active</option>
+          <option value="pending">Status: Pending delete</option>
+          <option value="deleted">Status: Permanently deleted</option>
         </select>
         <button onclick="openExportModal()" class="px-4 py-2.5 text-sm bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 border border-slate-200 active:scale-[0.97]">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -977,6 +985,8 @@ async function loadEmployees() {
   if (cf) params.set('date_filter', cf);
   if (uf) params.set('updated_filter', uf);
   if (sq) params.set('search', sq);
+  const sf = document.getElementById('statusFilter')?.value || '';
+  if (sf) params.set('status_filter', sf);
   params.set('include_pending', '1');
   const reqId = ++loadEmployees._reqId;
   try {
@@ -1080,23 +1090,32 @@ function renderTable(data) {
     const nums = emp.numbers || [{ ext: '', mobile: '', sd: '', sdNo: '' }];
     const exts = nums.map(n => n.ext).filter(Boolean).join(' / ') || '-';
     const mobiles = nums.map(n => n.mobile).filter(Boolean).join(', ') || '-';
-    const isPending = emp.delete_requested_by && !emp.deleted_at;
+    const isDeleted = !!emp.deleted_at;
+    const isPending = !isDeleted && emp.delete_requested_by;
     const isMyRequest = isPending && emp.delete_requested_by === adminUser.id;
 
     const tr = document.createElement('tr');
-    tr.className = (isPending ? 'row-pending-delete' : 'hover:bg-slate-50') + ' transition-colors';
+    tr.className = (isDeleted ? 'row-deleted' : isPending ? 'row-pending-delete' : 'hover:bg-slate-50') + ' transition-colors';
 
-    const statusBadge = isPending
+    const statusBadge = isDeleted
+      ? `<span class="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 bg-slate-200 rounded-full px-2.5 py-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+          Deleted
+         </span>`
+      : isPending
       ? `<span class="inline-flex items-center gap-1.5 text-xs font-medium text-red-700 bg-red-100 rounded-full px-2.5 py-1">
           <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>
           ${isMyRequest ? 'Your request' : 'Pending'}
          </span>`
       : '';
 
-    const editDisabled = isPending ? 'disabled opacity-30 pointer-events-none' : '';
-    const extDisabled = isPending ? 'disabled opacity-30 pointer-events-none' : '';
+    const editDisabled = (isPending || isDeleted) ? 'disabled opacity-30 pointer-events-none' : '';
+    const extDisabled = (isPending || isDeleted) ? 'disabled opacity-30 pointer-events-none' : '';
 
     let deleteBtn = '';
+    if (isDeleted) {
+      deleteBtn = '<span class="text-xs text-slate-400 px-2">—</span>';
+    } else {
     const cancelBtn = isPending
       ? `<button onclick="cancelDelete(${emp.id})" class="p-1.5 text-slate-500 hover:text-brand-600 hover:bg-brand-50 rounded-lg cursor-pointer" title="Cancel delete request">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -1115,6 +1134,7 @@ function renderTable(data) {
       deleteBtn = `<button onclick="requestDelete(${emp.id})" class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer" title="Request delete">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
       </button>`;
+    }
     }
 
     tr.innerHTML = `
@@ -2811,6 +2831,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('worksForFilter').addEventListener('change', loadEmployees);
   document.getElementById('createdFilter').addEventListener('change', loadEmployees);
   document.getElementById('updatedFilter').addEventListener('change', loadEmployees);
+  document.getElementById('statusFilter').addEventListener('change', loadEmployees);
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeEmpModal(); closeExtModal(); closeExportModal(); closeImportModal(); closeStationModal(); closeBranchModal(); closeStateModal(); closeLocationModal(); closeDeptModal(); closeIpModal(); closePasscodeModal(); } });
   await loadBranchesLocations();
   await loadDepartments();
