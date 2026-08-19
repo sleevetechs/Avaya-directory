@@ -457,6 +457,23 @@
   </div>
 </div>
 
+<div id="empViewModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeViewModal()"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 modal-enter p-6 max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h2 class="text-lg font-bold text-slate-800">Employee details</h2>
+        <p id="empViewStatus" class="text-xs mt-1"></p>
+      </div>
+      <button onclick="closeViewModal()" class="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center cursor-pointer">
+        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div id="empViewBody" class="space-y-4 text-sm"></div>
+    <button type="button" onclick="closeViewModal()" class="w-full mt-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-xl cursor-pointer">Close</button>
+  </div>
+</div>
+
 <div id="extModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
   <div class="absolute inset-0 bg-black/30 backdrop-blur-sm fade-in" onclick="closeExtModal()"></div>
   <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg z-10 modal-enter p-6 max-h-[90vh] overflow-y-auto">
@@ -1169,6 +1186,9 @@ function renderTable(data) {
       <td class="px-4 py-3.5 text-xs text-slate-400">${formatDate(emp.updated_at)}</td>
       <td class="px-4 py-3.5">
         <div class="flex items-center justify-end gap-1">
+          <button onclick="openViewModal(${emp.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer transition-colors" title="View details">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          </button>
           <button onclick="openEditModal(${emp.id})" ${editDisabled} class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer transition-colors" title="Edit">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
           </button>
@@ -1214,6 +1234,96 @@ function openEditModal(id) {
 }
 
 function closeEmpModal() { document.getElementById('empModal').classList.add('hidden'); }
+
+function viewField(label, value, mono) {
+  const display = value
+    ? `<span class="${mono ? 'font-mono' : ''}">${escapeHtml(String(value))}</span>`
+    : '<span class="text-slate-300">—</span>';
+  return `<div><p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">${escapeHtml(label)}</p><p class="text-sm text-slate-800">${display}</p></div>`;
+}
+
+function renderEmployeeView(emp) {
+  const isDeleted = !!emp.deleted_at;
+  const isPending = !isDeleted && emp.delete_requested_by;
+  const statusEl = document.getElementById('empViewStatus');
+  if (isDeleted) {
+    statusEl.innerHTML = '<span class="inline-flex items-center gap-1 text-xs font-semibold text-slate-600 bg-slate-200 rounded-full px-2.5 py-0.5">Permanently deleted</span>';
+  } else if (isPending) {
+    statusEl.innerHTML = '<span class="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 rounded-full px-2.5 py-0.5">Pending delete</span>';
+  } else {
+    statusEl.innerHTML = '<span class="inline-flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 rounded-full px-2.5 py-0.5">Active</span>';
+  }
+
+  const nums = emp.numbers || [];
+  const extHtml = nums.length
+    ? nums.map((n, i) => `
+        <div class="border border-slate-100 rounded-xl p-3 ${i ? 'mt-2' : ''}">
+          <p class="text-xs font-semibold text-slate-500 mb-2">${escapeHtml(n.label || ('Ext ' + (i + 1)))}</p>
+          <div class="grid grid-cols-2 gap-3">
+            ${viewField('Extension', n.ext, true)}
+            ${viewField('Mobile', n.mobile, true)}
+            ${viewField('Direct line', n.sd, true)}
+            ${viewField('Speed dial', n.sd_no, true)}
+          </div>
+        </div>`).join('')
+    : '<p class="text-sm text-slate-400">No extension lines</p>';
+
+  const body = document.getElementById('empViewBody');
+  body.innerHTML = `
+    <div class="grid grid-cols-2 gap-4">
+      ${viewField('Name', emp.name)}
+      ${viewField('Email', emp.email)}
+      ${viewField('Department', emp.dept)}
+      ${viewField('Branch / location', branchCellLabel(emp))}
+      ${viewField('State', emp.state_name)}
+      ${viewField('Company / site', emp.station_name || emp.location_name)}
+      ${viewField('Works for station', emp.works_for_station || '')}
+      ${viewField('Employee ID', emp.id, true)}
+    </div>
+    ${emp.location_address ? `<div class="pt-2 border-t border-slate-100">${viewField('Address', emp.location_address)}</div>` : ''}
+    <div class="pt-2 border-t border-slate-100">
+      <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Extension lines</p>
+      ${extHtml}
+    </div>
+    <div class="pt-2 border-t border-slate-100 grid grid-cols-2 gap-4">
+      ${viewField('Created', formatDateTime(emp.created_at))}
+      ${viewField('Created by', emp.created_by_name)}
+      ${viewField('Updated', formatDateTime(emp.updated_at))}
+      ${viewField('Updated by', emp.updated_by_name)}
+    </div>
+    ${isPending ? `
+    <div class="pt-2 border-t border-red-100 bg-red-50/50 rounded-xl p-3 grid grid-cols-2 gap-4">
+      ${viewField('Delete requested', formatDateTime(emp.delete_requested_at))}
+      ${viewField('Requested by', emp.delete_requested_by_name)}
+    </div>` : ''}
+    ${isDeleted ? `
+    <div class="pt-2 border-t border-slate-200 bg-slate-50 rounded-xl p-3 grid grid-cols-2 gap-4">
+      ${viewField('Deleted', formatDateTime(emp.deleted_at))}
+      ${viewField('Deleted by', emp.deleted_by_name)}
+    </div>` : ''}`;
+}
+
+async function openViewModal(id) {
+  let emp = employees.find(e => e.id === id);
+  if (!emp) {
+    try {
+      const res = await fetch('/api/employees/' + id, { headers: getHeaders() });
+      if (res.status === 401) { logout(); return; }
+      if (!res.ok) {
+        showToast((await res.json().catch(() => ({}))).error || 'Could not load employee', '#dc2626');
+        return;
+      }
+      emp = await res.json();
+    } catch {
+      showToast('Could not load employee', '#dc2626');
+      return;
+    }
+  }
+  renderEmployeeView(emp);
+  document.getElementById('empViewModal').classList.remove('hidden');
+}
+
+function closeViewModal() { document.getElementById('empViewModal').classList.add('hidden'); }
 
 async function handleEmpSubmit(e) {
   e.preventDefault();
@@ -2856,7 +2966,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('createdFilter').addEventListener('change', loadEmployees);
   document.getElementById('updatedFilter').addEventListener('change', loadEmployees);
   document.getElementById('statusFilter').addEventListener('change', loadEmployees);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeEmpModal(); closeExtModal(); closeExportModal(); closeImportModal(); closeStationModal(); closeBranchModal(); closeStateModal(); closeLocationModal(); closeDeptModal(); closeIpModal(); closePasscodeModal(); } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeEmpModal(); closeViewModal(); closeExtModal(); closeExportModal(); closeImportModal(); closeStationModal(); closeBranchModal(); closeStateModal(); closeLocationModal(); closeDeptModal(); closeIpModal(); closePasscodeModal(); } });
   await loadBranchesLocations();
   await loadDepartments();
   await loadEmployees();

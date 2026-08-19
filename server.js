@@ -1049,11 +1049,35 @@ app.get('/api/employees/import-template', adminOnly, async (req, res) => {
 // ── Get Single Employee ──
 app.get('/api/employees/:id', auth, async (req, res) => {
   try {
-    const [emps] = await pool.execute('SELECT * FROM employees WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
+    const isAdmin = req.admin && (req.admin.role === 'admin' || req.admin.role === 'super_admin');
+    let where = 'WHERE e.id = ?';
+    const params = [req.params.id];
+    if (!isAdmin) {
+      where += ' AND e.deleted_at IS NULL AND e.delete_requested_by IS NULL';
+    }
+    const [emps] = await pool.execute(
+      `SELECT e.*, l.name AS location_name, l.city AS location_city, l.address AS location_address, l.maps_url AS location_maps_url,
+              st.name AS state_name_join, st.id AS state_id, c.id AS country_id, c.name AS country_name,
+              cre.name AS created_by_name, upd.name AS updated_by_name, dr.name AS delete_requested_by_name,
+              del.name AS deleted_by_name
+       FROM employees e
+       LEFT JOIN locations l ON e.location_id = l.id
+       LEFT JOIN states st ON st.id = l.state_id
+       LEFT JOIN branches c ON c.id = st.country_id
+       LEFT JOIN admins cre ON e.created_by = cre.id
+       LEFT JOIN admins upd ON e.updated_by = upd.id
+       LEFT JOIN admins dr ON e.delete_requested_by = dr.id
+       LEFT JOIN admins del ON e.deleted_by = del.id
+       ${where}`,
+      params
+    );
     if (!emps.length) return res.status(404).json({ error: 'Not found' });
-    const [nums] = await pool.execute('SELECT * FROM employee_numbers WHERE employee_id = ?', [req.params.id]);
-    emps[0].numbers = nums;
-    res.json(emps[0]);
+    const emp = emps[0];
+    if (emp.state_name_join) emp.state_name = emp.state_name_join;
+    if (emp.country_name) emp.branch = emp.country_name;
+    const [nums] = await pool.execute('SELECT * FROM employee_numbers WHERE employee_id = ? ORDER BY id', [req.params.id]);
+    emp.numbers = nums;
+    res.json(emp);
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
