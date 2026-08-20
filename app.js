@@ -76,6 +76,10 @@ function countryNeedsStatePicker(countryName) {
   return states.some(s => s.name !== 'Main');
 }
 
+function isCeoCountry(name) {
+  return String(name || '').trim().toUpperCase() === 'CEO';
+}
+
 function locationsForState(state) {
   return state ? (state.locations || []) : [];
 }
@@ -782,6 +786,12 @@ function updateSelectedStation() {
   if (!box || !content) return;
 
   if (!selectedCountry) {
+    box.classList.add('hidden');
+    content.innerHTML = '';
+    return;
+  }
+
+  if (isCeoCountry(selectedCountry)) {
     box.classList.add('hidden');
     content.innerHTML = '';
     return;

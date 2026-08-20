@@ -853,6 +853,9 @@ app.get('/api/employees', async (req, res) => {
       }
       for (const emp of emps) emp.numbers = byEmp[emp.id] || [];
     }
+    if (admin && (includePending || statusFilter)) {
+      await attachPendingExtensionRemovals(emps);
+    }
     debug('Employees query returned rows: ' + emps.length);
     res.json(emps);
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
@@ -1077,6 +1080,9 @@ app.get('/api/employees/:id', auth, async (req, res) => {
     if (emp.country_name) emp.branch = emp.country_name;
     const [nums] = await pool.execute('SELECT * FROM employee_numbers WHERE employee_id = ? ORDER BY id', [req.params.id]);
     emp.numbers = nums;
+    if (isAdmin) {
+      await attachPendingExtensionRemovals([emp]);
+    }
     res.json(emp);
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
@@ -1210,6 +1216,111 @@ async function renumberEmployeeExtLabels(empId) {
   const [nums] = await pool.execute('SELECT id FROM employee_numbers WHERE employee_id = ? ORDER BY id', [empId]);
   for (let i = 0; i < nums.length; i++) {
     await pool.execute('UPDATE employee_numbers SET label = ? WHERE id = ?', ['Ext ' + (i + 1), nums[i].id]);
+  }
+}
+
+async function ensureExtensionRemovalTables() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS employee_number_removals (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      employee_id INT NOT NULL,
+      employee_number_id INT NULL,
+      reason VARCHAR(16) NOT NULL DEFAULT 'changed',
+      label VARCHAR(64) NOT NULL DEFAULT '',
+      ext VARCHAR(64) NOT NULL DEFAULT '',
+      mobile VARCHAR(64) NOT NULL DEFAULT '',
+      sd VARCHAR(64) NOT NULL DEFAULT '',
+      sd_no VARCHAR(64) NOT NULL DEFAULT '',
+      new_ext VARCHAR(64) NOT NULL DEFAULT '',
+      new_mobile VARCHAR(64) NOT NULL DEFAULT '',
+      new_sd VARCHAR(64) NOT NULL DEFAULT '',
+      new_sd_no VARCHAR(64) NOT NULL DEFAULT '',
+      requested_by INT NOT NULL,
+      requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      confirmed_by INT NULL,
+      confirmed_at TIMESTAMP NULL,
+      cancelled_at TIMESTAMP NULL,
+      INDEX idx_enr_employee (employee_id),
+      INDEX idx_enr_pending (confirmed_at, cancelled_at)
+    )
+  `);
+}
+
+function normPhoneField(v) {
+  return String(v || '').trim();
+}
+
+function hasRemovableValues(row) {
+  return !!(
+    normPhoneField(row.ext) ||
+    normPhoneField(row.mobile) ||
+    normPhoneField(row.sd) ||
+    normPhoneField(row.sd_no)
+  );
+}
+
+function extensionFieldsChanged(oldRow, body) {
+  const ext = normPhoneField(body.ext);
+  const mobile = normPhoneField(body.mobile);
+  const sd = normPhoneField(body.sd);
+  const sdNo = normPhoneField(body.sdNo || body.sd_no);
+  return (
+    normPhoneField(oldRow.ext) !== ext ||
+    normPhoneField(oldRow.mobile) !== mobile ||
+    normPhoneField(oldRow.sd) !== sd ||
+    normPhoneField(oldRow.sd_no) !== sdNo
+  );
+}
+
+async function createExtensionRemovalRecord(employeeId, employeeNumberId, oldRow, body, reason, adminId) {
+  const newExt = normPhoneField(body.ext);
+  const newMobile = normPhoneField(body.mobile);
+  const newSd = normPhoneField(body.sd);
+  const newSdNo = normPhoneField(body.sdNo || body.sd_no);
+  await pool.execute(
+    `INSERT INTO employee_number_removals
+     (employee_id, employee_number_id, reason, label, ext, mobile, sd, sd_no,
+      new_ext, new_mobile, new_sd, new_sd_no, requested_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      employeeId,
+      employeeNumberId || null,
+      reason,
+      oldRow.label || '',
+      normPhoneField(oldRow.ext),
+      normPhoneField(oldRow.mobile),
+      normPhoneField(oldRow.sd),
+      normPhoneField(oldRow.sd_no),
+      reason === 'changed' ? newExt : '',
+      reason === 'changed' ? newMobile : '',
+      reason === 'changed' ? newSd : '',
+      reason === 'changed' ? newSdNo : '',
+      adminId,
+    ]
+  );
+}
+
+async function attachPendingExtensionRemovals(emps) {
+  if (!emps.length) return;
+  const ids = emps.map((e) => e.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const [rows] = await pool.execute(
+    `SELECT r.*, req.name AS requested_by_name, conf.name AS confirmed_by_name
+     FROM employee_number_removals r
+     LEFT JOIN admins req ON req.id = r.requested_by
+     LEFT JOIN admins conf ON conf.id = r.confirmed_by
+     WHERE r.employee_id IN (${placeholders})
+       AND r.confirmed_at IS NULL AND r.cancelled_at IS NULL
+     ORDER BY r.requested_at DESC`,
+    ids
+  );
+  const byEmp = {};
+  for (const row of rows) {
+    if (!byEmp[row.employee_id]) byEmp[row.employee_id] = [];
+    byEmp[row.employee_id].push(row);
+  }
+  for (const emp of emps) {
+    emp.pending_extension_removals = byEmp[emp.id] || [];
   }
 }
 
@@ -1546,9 +1657,13 @@ app.put('/api/employees/:id/extensions/:extIdx', adminOnly, async (req, res) => 
     const [nums] = await pool.execute('SELECT * FROM employee_numbers WHERE employee_id = ? ORDER BY id', [req.params.id]);
     const idx = parseInt(req.params.extIdx);
     if (idx < 0 || idx >= nums.length) return res.status(400).json({ error: 'Invalid extension index' });
-    const { ext, mobile, sd, sdNo } = req.body;
     const old = nums[idx];
+    const { ext, mobile, sd, sdNo } = req.body;
     const label = 'Ext ' + (idx + 1);
+    const body = { ext, mobile, sd, sdNo };
+    if (extensionFieldsChanged(old, body) && hasRemovableValues(old)) {
+      await createExtensionRemovalRecord(req.params.id, old.id, old, body, 'changed', req.admin.id);
+    }
     await pool.execute(
       'UPDATE employee_numbers SET label = ?, ext = ?, mobile = ?, sd = ?, sd_no = ? WHERE id = ?',
       [label, ext || '', mobile || '', sd || '', sdNo || '', old.id]
@@ -1569,13 +1684,54 @@ app.delete('/api/employees/:id/extensions/:extIdx', adminOnly, async (req, res) 
     const [nums] = await pool.execute('SELECT * FROM employee_numbers WHERE employee_id = ? ORDER BY id', [req.params.id]);
     const idx = parseInt(req.params.extIdx);
     if (idx < 0 || idx >= nums.length) return res.status(400).json({ error: 'Invalid extension index' });
-    await pool.execute('DELETE FROM employee_numbers WHERE id = ?', [nums[idx].id]);
+    const old = nums[idx];
+    if (hasRemovableValues(old)) {
+      await createExtensionRemovalRecord(req.params.id, old.id, old, {}, 'removed', req.admin.id);
+    }
+    await pool.execute('DELETE FROM employee_numbers WHERE id = ?', [old.id]);
     await renumberEmployeeExtLabels(req.params.id);
     await pool.execute('UPDATE employees SET updated_by = ? WHERE id = ?', [req.admin.id, req.params.id]);
     await logAction(req.admin.id, 'update', 'employee', parseInt(req.params.id), null, { removed_extension: nums[idx] });
     const [newNums] = await pool.execute('SELECT * FROM employee_numbers WHERE employee_id = ? ORDER BY id', [req.params.id]);
     emps[0].numbers = newNums;
     res.json({ success: true, employee: emps[0] });
+  } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
+});
+
+// ── Confirm extension removed from Avaya (second admin) ──
+app.post('/api/employees/:id/extension-removals/:removalId/confirm', adminOnly, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT * FROM employee_number_removals
+       WHERE id = ? AND employee_id = ? AND confirmed_at IS NULL AND cancelled_at IS NULL`,
+      [req.params.removalId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Pending removal not found' });
+    const row = rows[0];
+    if (row.requested_by === req.admin.id) {
+      return res.status(400).json({ error: 'You logged this change. Another admin must confirm Avaya removal.' });
+    }
+    await pool.execute(
+      'UPDATE employee_number_removals SET confirmed_by = ?, confirmed_at = NOW() WHERE id = ?',
+      [req.admin.id, row.id]
+    );
+    await logAction(req.admin.id, 'extension_removal_confirm', 'employee', parseInt(req.params.id), row, { confirmed_by: req.admin.id });
+    res.json({ success: true, message: 'Marked as removed from Avaya' });
+  } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
+});
+
+// ── Cancel pending extension removal ──
+app.post('/api/employees/:id/extension-removals/:removalId/cancel', adminOnly, async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      `SELECT * FROM employee_number_removals
+       WHERE id = ? AND employee_id = ? AND confirmed_at IS NULL AND cancelled_at IS NULL`,
+      [req.params.removalId, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Pending removal not found' });
+    await pool.execute('UPDATE employee_number_removals SET cancelled_at = NOW() WHERE id = ?', [rows[0].id]);
+    await logAction(req.admin.id, 'extension_removal_cancel', 'employee', parseInt(req.params.id), rows[0], { cancelled_by: req.admin.id });
+    res.json({ success: true, message: 'Avaya removal request cancelled' });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
@@ -2643,6 +2799,13 @@ async function bootSchema() {
     debug('bootSchema: access control tables ready');
   } catch (e) {
     debug('bootSchema: failed to ensure access tables', e);
+  }
+  try {
+    debug('bootSchema: ensuring extension removal tables...');
+    await ensureExtensionRemovalTables();
+    debug('bootSchema: extension removal tables ready');
+  } catch (e) {
+    debug('bootSchema: failed to ensure extension removal tables', e);
   }
   debug('bootSchema: completed');
 }
