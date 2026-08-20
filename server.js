@@ -776,6 +776,7 @@ app.get('/api/employees', async (req, res) => {
     debug('ENTERED GET /api/employees');
     const admin = getAdminFromAuthHeader(req);
     const statusFilter = admin ? String(req.query.status_filter || '').trim() : '';
+    const includePending = admin && req.query.include_pending === '1';
     let where;
     if (statusFilter === 'pending') {
       where = 'WHERE e.deleted_at IS NULL AND e.delete_requested_by IS NOT NULL';
@@ -783,7 +784,6 @@ app.get('/api/employees', async (req, res) => {
       where = 'WHERE e.deleted_at IS NOT NULL';
     } else {
       where = 'WHERE e.deleted_at IS NULL';
-      const includePending = admin && req.query.include_pending === '1';
       if (!includePending) {
         where += ' AND e.delete_requested_by IS NULL';
       }
