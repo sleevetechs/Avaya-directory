@@ -816,6 +816,12 @@ app.get('/api/employees', async (req, res) => {
     let where;
     if (statusFilter === 'pending') {
       where = 'WHERE e.deleted_at IS NULL AND e.delete_requested_by IS NOT NULL';
+    } else if (statusFilter === 'avaya_pending') {
+      where = `WHERE e.deleted_at IS NULL AND EXISTS (
+        SELECT 1 FROM employee_number_removals r
+        WHERE r.employee_id = e.id
+          AND r.confirmed_at IS NULL AND r.cancelled_at IS NULL
+      )`;
     } else if (statusFilter === 'deleted') {
       where = 'WHERE e.deleted_at IS NOT NULL';
     } else {
