@@ -140,6 +140,9 @@ PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- Allow manager role (expand ENUM or short VARCHAR on admins.role)
+ALTER TABLE admins MODIFY COLUMN role VARCHAR(32) NOT NULL DEFAULT 'admin';
+
 SELECT 'Migration complete' AS status;
 SELECT COUNT(*) AS employees FROM employees WHERE deleted_at IS NULL;
 SELECT COUNT(*) AS admins FROM admins;

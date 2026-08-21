@@ -182,6 +182,21 @@ async function ensureWorksForStationColumn() {
   }
 }
 
+async function ensureAdminRoleColumn() {
+  const [cols] = await pool.execute(
+    `SELECT COLUMN_TYPE AS column_type
+     FROM INFORMATION_SCHEMA.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'admins' AND COLUMN_NAME = 'role'`
+  );
+  if (!cols.length) return;
+  const colType = String(cols[0].column_type || '').toLowerCase();
+  if (colType !== 'varchar(32)') {
+    await pool.execute(
+      `ALTER TABLE admins MODIFY COLUMN role VARCHAR(32) NOT NULL DEFAULT 'admin'`
+    );
+  }
+}
+
 function normalizeWorksForStation(value) {
   const s = String(value == null ? '' : value).trim();
   if (!s || /^none$/i.test(s) || s === '—') return '';
@@ -2828,6 +2843,13 @@ async function bootSchema() {
     debug('bootSchema: extension removal tables ready');
   } catch (e) {
     debug('bootSchema: failed to ensure extension removal tables', e);
+  }
+  try {
+    debug('bootSchema: ensuring admins.role column supports manager...');
+    await ensureAdminRoleColumn();
+    debug('bootSchema: admins.role column ready');
+  } catch (e) {
+    debug('bootSchema: failed to ensure admins.role column', e);
   }
   debug('bootSchema: completed');
 }
