@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (token) {
     const admin = JSON.parse(localStorage.getItem('admin') || sessionStorage.getItem('admin') || '{}');
     const link = document.getElementById('adminLink');
-    if (admin.role === 'super_admin' || admin.role === 'admin') {
+    if (admin.role === 'super_admin' || admin.role === 'admin' || admin.role === 'manager') {
       link.href = admin.role === 'super_admin' ? '/superadmin' : '/admin';
       link.textContent = 'Dashboard';
     }

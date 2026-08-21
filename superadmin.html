@@ -168,7 +168,8 @@
           <label class="block text-xs font-semibold text-slate-600 mb-1.5">Role</label>
           <select id="adminRole" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
             <option value="viewer">Viewer (directory only)</option>
-            <option value="admin">Admin</option>
+            <option value="manager">Manager (employees, recent, access)</option>
+            <option value="admin">Admin (full panel)</option>
           </select>
         </div>
         <div>
@@ -237,7 +238,7 @@ async function loadAdmins() {
       tr.innerHTML = `
         <td class="px-4 py-3.5 font-semibold text-slate-800">${a.name}${isPrimary ? ' <span class="text-[10px] font-bold text-brand-600 uppercase ml-1">Primary</span>' : ''}</td>
         <td class="px-4 py-3.5 text-slate-600">${a.email}</td>
-        <td class="px-4 py-3.5"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${a.role === 'super_admin' ? 'bg-brand-100 text-brand-700' : a.role === 'viewer' ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-700'}">${a.role}</span></td>
+        <td class="px-4 py-3.5"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${a.role === 'super_admin' ? 'bg-brand-100 text-brand-700' : a.role === 'viewer' ? 'bg-slate-100 text-slate-700' : a.role === 'manager' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-700'}">${a.role}</span></td>
         <td class="px-4 py-3.5"><span class="inline-flex items-center gap-1.5 text-xs font-medium ${a.is_active ? 'text-green-700' : 'text-red-700'}"><span class="w-1.5 h-1.5 rounded-full ${a.is_active ? 'bg-green-500' : 'bg-red-500'}"></span>${a.is_active ? 'Active' : 'Inactive'}</span></td>
         <td class="px-4 py-3.5 text-xs text-slate-400">${formatDate(a.created_at)}</td>
         <td class="px-4 py-3.5">

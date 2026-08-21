@@ -1007,7 +1007,6 @@ function renderGrid(data) {
       <div class="space-y-1">${previewNums}${moreTag}</div>
       <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
         <span class="badge" style="background-color:${c.bg};color:${c.text}">${badgeParts.join(' · ')}</span>
-        ${emp.works_for_station ? `<span class="badge bg-amber-50 text-amber-800 border border-amber-200">Works for ${emp.works_for_station}</span>` : ''}
       </div>`;
     grid.appendChild(card);
   });
@@ -1051,10 +1050,9 @@ function openModal(emp) {
         <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-sm" style="background-color:${c.bg};color:${c.text}">${initials}</div>
         <div class="min-w-0 flex-1">
           <h2 class="text-lg font-bold text-slate-800 leading-tight">${emp.name}</h2>
-          <p class="text-slate-500 text-sm mt-0.5">${emp.dept}</p>
+          <p class="text-slate-500 text-sm mt-0.5">${emp.dept}${emp.works_for_station ? ` · <span class="text-amber-700 font-medium">→ ${emp.works_for_station}</span>` : ''}</p>
           <div class="flex flex-wrap gap-2 mt-2">
             <span class="badge" style="background-color:${c.bg};color:${c.text}">${badgeParts.join(' · ')}</span>
-            ${emp.works_for_station ? `<span class="badge bg-amber-50 text-amber-800 border border-amber-200">Works for ${emp.works_for_station}</span>` : ''}
             ${isMulti ? `<span class="badge bg-brand-50 text-brand-700 border border-brand-200">${numbers.length} extensions</span>` : ''}
           </div>
         </div>

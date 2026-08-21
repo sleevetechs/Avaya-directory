@@ -716,17 +716,38 @@ async function superAdmin(req, res, next) {
   });
 }
 
+const STAFF_ROLES = new Set(['super_admin', 'admin', 'manager']);
+const FULL_ADMIN_ROLES = new Set(['super_admin', 'admin']);
+
+function isStaffRole(role) {
+  return STAFF_ROLES.has(role);
+}
+
+function isFullAdminRole(role) {
+  return FULL_ADMIN_ROLES.has(role);
+}
+
 async function adminOnly(req, res, next) {
   await auth(req, res, () => {
-    if (req.admin.role === 'viewer') {
-      debug('Role check failed (viewer is read-only)');
-      return res.status(403).json({ error: 'View-only access' });
+    if (!isStaffRole(req.admin.role)) {
+      debug('Role check failed (staff required, got ' + req.admin.role + ')');
+      return res.status(403).json({ error: 'Access denied' });
     }
     next();
   });
 }
 
-debug('Authentication initialized (auth / superAdmin / adminOnly)');
+async function fullAdminOnly(req, res, next) {
+  await auth(req, res, () => {
+    if (!isFullAdminRole(req.admin.role)) {
+      debug('Role check failed (full admin required, got ' + req.admin.role + ')');
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+    next();
+  });
+}
+
+debug('Authentication initialized (auth / superAdmin / adminOnly / fullAdminOnly)');
 
 // ── Helper: Log action ──
 async function logAction(adminId, action, entityType, entityId, oldData, newData) {
@@ -1052,7 +1073,7 @@ app.get('/api/employees/import-template', adminOnly, async (req, res) => {
 // ── Get Single Employee ──
 app.get('/api/employees/:id', auth, async (req, res) => {
   try {
-    const isAdmin = req.admin && (req.admin.role === 'admin' || req.admin.role === 'super_admin');
+    const isAdmin = req.admin && isStaffRole(req.admin.role);
     let where = 'WHERE e.id = ?';
     const params = [req.params.id];
     if (!isAdmin) {
@@ -1751,7 +1772,7 @@ app.post('/api/admins', superAdmin, async (req, res) => {
     // New accounts are always admin (not super_admin)
     let role = String(req.body.role || 'admin');
     if (role === 'super_admin') role = 'admin';
-    if (role !== 'admin' && role !== 'viewer') role = 'admin';
+    if (!['admin', 'viewer', 'manager'].includes(role)) role = 'admin';
     if (String(email).trim().toLowerCase() === PRIMARY_SUPER_ADMIN_EMAIL) {
       return res.status(400).json({ error: 'This email is reserved for the primary super admin' });
     }
@@ -1800,8 +1821,9 @@ app.put('/api/admins/:id', superAdmin, async (req, res) => {
       if (role) {
         // Do not promote others to super_admin
         const safeRole = role === 'super_admin' ? 'admin' : role;
+        const allowed = ['admin', 'viewer', 'manager'];
         sql += ' role = ?,';
-        params.push(safeRole === 'viewer' ? 'viewer' : 'admin');
+        params.push(allowed.includes(safeRole) ? safeRole : 'admin');
       }
       if (is_active !== undefined) { sql += ' is_active = ?,'; params.push(is_active); }
     }
@@ -1864,7 +1886,7 @@ app.get('/api/departments', async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/departments', adminOnly, async (req, res) => {
+app.post('/api/departments', fullAdminOnly, async (req, res) => {
   try {
     const name = String(req.body.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Department name required' });
@@ -1882,7 +1904,7 @@ app.post('/api/departments', adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/departments/:id', adminOnly, async (req, res) => {
+app.put('/api/departments/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM departments WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -1910,7 +1932,7 @@ app.put('/api/departments/:id', adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/departments/:id', adminOnly, async (req, res) => {
+app.delete('/api/departments/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM departments WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2028,7 +2050,7 @@ app.get('/api/countries', async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/branches', adminOnly, async (req, res) => {
+app.post('/api/branches', fullAdminOnly, async (req, res) => {
   try {
     const name = String(req.body.name || '').trim();
     if (!name) return res.status(400).json({ error: 'Country name required' });
@@ -2046,7 +2068,7 @@ app.post('/api/branches', adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/branches/:id', adminOnly, async (req, res) => {
+app.put('/api/branches/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM branches WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2081,7 +2103,7 @@ app.put('/api/branches/:id', adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/branches/:id', adminOnly, async (req, res) => {
+app.delete('/api/branches/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM branches WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2121,7 +2143,7 @@ app.get('/api/states', async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/states', adminOnly, async (req, res) => {
+app.post('/api/states', fullAdminOnly, async (req, res) => {
   try {
     const countryId = parseInt(req.body.country_id, 10);
     const name = String(req.body.name || '').trim();
@@ -2145,7 +2167,7 @@ app.post('/api/states', adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/states/:id', adminOnly, async (req, res) => {
+app.put('/api/states/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM states WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2175,7 +2197,7 @@ app.put('/api/states/:id', adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/states/:id', adminOnly, async (req, res) => {
+app.delete('/api/states/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM states WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2218,7 +2240,7 @@ app.get('/api/locations', async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/locations', adminOnly, async (req, res) => {
+app.post('/api/locations', fullAdminOnly, async (req, res) => {
   try {
     const stateId = parseInt(req.body.state_id, 10);
     const name = String(req.body.name || '').trim();
@@ -2239,7 +2261,7 @@ app.post('/api/locations', adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/locations/:id', adminOnly, async (req, res) => {
+app.put('/api/locations/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM locations WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2274,7 +2296,7 @@ app.put('/api/locations/:id', adminOnly, async (req, res) => {
   }
 });
 
-app.delete('/api/locations/:id', adminOnly, async (req, res) => {
+app.delete('/api/locations/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM locations WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2330,7 +2352,7 @@ app.get('/api/stations', async (req, res) => {
 });
 
 // ── Station numbers: all (admin) ──
-app.get('/api/stations/all', adminOnly, async (req, res) => {
+app.get('/api/stations/all', fullAdminOnly, async (req, res) => {
   try {
     const [rows] = await pool.execute(
       `SELECT s.*, l.name AS location_name, l.city, st.name AS state_name, st.id AS state_id,
@@ -2347,7 +2369,7 @@ app.get('/api/stations/all', adminOnly, async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/stations', adminOnly, async (req, res) => {
+app.post('/api/stations', fullAdminOnly, async (req, res) => {
   try {
     const { location_id, label, number_type, phone, is_primary, sort_order } = req.body;
     if (!location_id || !phone) return res.status(400).json({ error: 'Location and phone required' });
@@ -2366,7 +2388,7 @@ app.post('/api/stations', adminOnly, async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.put('/api/stations/:id', adminOnly, async (req, res) => {
+app.put('/api/stations/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM station_numbers WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
@@ -2390,7 +2412,7 @@ app.put('/api/stations/:id', adminOnly, async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/stations/:id', adminOnly, async (req, res) => {
+app.delete('/api/stations/:id', fullAdminOnly, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM station_numbers WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });

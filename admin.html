@@ -862,6 +862,29 @@
 let employees = [];
 let adminUser = null;
 
+const MANAGER_TABS = new Set(['employees', 'recent', 'access']);
+const STAFF_PANEL_ROLES = new Set(['admin', 'super_admin', 'manager']);
+
+function isManagerRole() {
+  return adminUser && adminUser.role === 'manager';
+}
+
+function roleDisplayLabel(role) {
+  if (role === 'super_admin') return 'Super Admin';
+  if (role === 'manager') return 'Manager';
+  if (role === 'admin') return 'Admin';
+  if (role === 'viewer') return 'Viewer';
+  return role || '';
+}
+
+function applyManagerRoleUi() {
+  const manager = isManagerRole();
+  ['tabDepartments', 'tabBranches', 'tabStations'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', manager);
+  });
+}
+
 function getAuthStore() {
   if (localStorage.getItem('admin')) return localStorage;
   if (sessionStorage.getItem('admin')) return sessionStorage;
@@ -931,6 +954,7 @@ function formatDateTime(d) {
 }
 
 function showAdminTab(tab) {
+  if (isManagerRole() && !MANAGER_TABS.has(tab)) tab = 'employees';
   document.getElementById('panelEmployees').classList.toggle('hidden', tab !== 'employees');
   document.getElementById('panelRecent').classList.toggle('hidden', tab !== 'recent');
   document.getElementById('panelDepartments').classList.toggle('hidden', tab !== 'departments');
@@ -3054,8 +3078,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   adminUser = JSON.parse(stored);
   if (adminUser.role === 'viewer') { window.location.href = '/'; return; }
-  if (adminUser.role !== 'admin' && adminUser.role !== 'super_admin') { window.location.href = '/'; return; }
-  document.getElementById('adminInfo').textContent = adminUser.name + ' (' + adminUser.role + ')';
+  if (!STAFF_PANEL_ROLES.has(adminUser.role)) { window.location.href = '/'; return; }
+  applyManagerRoleUi();
+  document.getElementById('adminInfo').textContent = adminUser.name + ' (' + roleDisplayLabel(adminUser.role) + ')';
   document.getElementById('searchInput').addEventListener('input', () => {
     clearTimeout(loadEmployees._searchTimer);
     loadEmployees._searchTimer = setTimeout(loadEmployees, 200);
