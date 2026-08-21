@@ -1457,6 +1457,28 @@ function openExtModal(id) {
 
 function closeExtModal() { document.getElementById('extModal').classList.add('hidden'); }
 
+async function syncExtModalEmployee(empId) {
+  const res = await fetch('/api/employees/' + empId, { headers: getHeaders() });
+  if (res.status === 401) { logout(); return; }
+  if (!res.ok) {
+    closeExtModal();
+    return;
+  }
+  const emp = await res.json();
+  const idx = employees.findIndex(e => String(e.id) === String(empId));
+  if (idx >= 0) employees[idx] = emp;
+  const modalOpen = !document.getElementById('extModal').classList.contains('hidden');
+  if (modalOpen) {
+    renderExtList(emp);
+    document.getElementById('extEmpId').value = empId;
+  }
+  renderTable(employees);
+  const sf = document.getElementById('statusFilter')?.value || '';
+  if (modalOpen && sf === 'avaya_pending' && !(emp.pending_extension_removals || []).length) {
+    closeExtModal();
+  }
+}
+
 function formatRemovalLine(r) {
   const bits = [];
   if (r.ext) bits.push('Ext ' + r.ext);
@@ -1630,11 +1652,7 @@ async function confirmExtRemoval(empId, removalId) {
     if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
     showToast('Avaya removal confirmed', '#059669');
     await loadEmployees();
-    const emp = employees.find(e => String(e.id) === String(empId));
-    if (emp) {
-      renderExtList(emp);
-      document.getElementById('extEmpId').value = empId;
-    }
+    await syncExtModalEmployee(empId);
   } catch { showToast('Error', '#dc2626'); }
 }
 
@@ -1650,11 +1668,7 @@ async function cancelExtRemoval(empId, removalId) {
     if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
     showToast('Avaya removal request cancelled', '#059669');
     await loadEmployees();
-    const emp = employees.find(e => String(e.id) === String(empId));
-    if (emp) {
-      renderExtList(emp);
-      document.getElementById('extEmpId').value = empId;
-    }
+    await syncExtModalEmployee(empId);
   } catch { showToast('Error', '#dc2626'); }
 }
 
