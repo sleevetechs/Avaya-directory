@@ -969,6 +969,7 @@ function showAdminTab(tab) {
   document.getElementById('tabBranches').className = tab === 'branches' ? active : inactive;
   document.getElementById('tabStations').className = tab === 'stations' ? active : inactive;
   document.getElementById('tabAccess').className = tab === 'access' ? active : inactive;
+  applyManagerRoleUi();
   if (tab === 'recent') loadRecent();
   if (tab === 'departments') loadDepartments();
   if (tab === 'branches') loadBranchesLocations();
