@@ -962,24 +962,37 @@ function clearFilters() {
   applyFilters();
 }
 
-function renderPreviewNumbers(numbers, limit) {
-  const slice = numbers.slice(0, limit);
-  return slice.map((n, idx) => {
-    const label = n.label || (numbers.length > 1 ? `Ext ${idx + 1}` : '');
-    const tel = n.mobile ? n.mobile.replace(/[\s.]/g, '') : '';
-    const sdBits = [];
-    if (n.sd) sdBits.push(`DL <span class="font-mono text-slate-600">${cleanNum(n.sd)}</span>`);
-    if (n.sdNo) sdBits.push(`SD <span class="font-mono text-slate-600">${cleanNum(n.sdNo)}</span>`);
-    return `
-      <div class="${idx ? 'pt-1.5 mt-1.5 border-t border-slate-100' : ''}">
-        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          ${label ? `<span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">${label}</span>` : ''}
-          ${n.ext ? `<span class="font-mono font-semibold text-slate-800 text-sm leading-none">${cleanNum(n.ext)}</span>` : ''}
-          ${n.mobile ? `<a href="tel:${tel}" onclick="event.stopPropagation()" class="text-slate-500 text-xs leading-none hover:text-brand-600">${cleanNum(n.mobile)}</a>` : ''}
-        </div>
-        ${sdBits.length ? `<p class="text-[11px] text-slate-400 mt-0.5 leading-snug">${sdBits.join(' · ')}</p>` : ''}
-      </div>`;
-  }).join('');
+function renderCardContact(numbers) {
+  const primary = numbers[0] || {};
+  const tel = primary.mobile ? primary.mobile.replace(/[\s.]/g, '') : '';
+  const ext = primary.ext ? cleanNum(primary.ext) : '';
+  const mobile = primary.mobile ? cleanNum(primary.mobile) : '';
+  const metaParts = [];
+  if (primary.sd) metaParts.push(`DL ${cleanNum(primary.sd)}`);
+  if (primary.sdNo) metaParts.push(`SD ${cleanNum(primary.sdNo)}`);
+  let metaLine = metaParts.join(' · ');
+  if (!metaLine && numbers.length > 1) {
+    metaLine = `${numbers.length} extensions · tap to view all`;
+  } else if (numbers.length > 1) {
+    metaLine += ` · +${numbers.length - 1} more`;
+  }
+  if (!ext && !mobile && !metaLine) metaLine = 'No contact details';
+
+  const extLabel = numbers.length > 1 ? (primary.label || 'Ext 1') : 'Extension';
+
+  return `
+    <div class="flex items-start justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">${ext || mobile ? extLabel : 'Contact'}</p>
+        <p class="font-mono text-base sm:text-lg font-bold text-slate-900 leading-none mt-1">${ext || mobile || '—'}</p>
+      </div>
+      ${mobile && ext ? `
+        <a href="tel:${tel}" onclick="event.stopPropagation()" class="shrink-0 text-right group/mobile">
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mobile</p>
+          <p class="text-xs sm:text-sm font-medium text-brand-600 group-hover/mobile:text-brand-700 leading-tight mt-1">${mobile}</p>
+        </a>` : ''}
+    </div>
+    <p class="text-[11px] text-slate-500 mt-2 min-h-[1rem] leading-snug line-clamp-2">${metaLine || '&nbsp;'}</p>`;
 }
 
 function renderGrid(data) {
@@ -998,29 +1011,26 @@ function renderGrid(data) {
     const locLabel = emp.location_name && emp.location_name !== 'Main' ? emp.location_name : (emp.station_name && emp.station_name !== 'Main' ? emp.station_name : '');
     const badgeParts = placeLabelParts(emp.branch, emp.state_name, locLabel);
 
+    const badgeLabel = badgeParts.join(' · ');
+
     const card = document.createElement('div');
-    card.className = 'bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-3.5 sm:p-5 card-hover shadow-sm active:scale-[0.99] transition-transform' + (isMulti ? ' border-l-[3px] border-l-brand-500' : '');
+    card.className = 'emp-card bg-white rounded-xl sm:rounded-2xl border border-slate-200/90 p-4 sm:p-5 card-hover shadow-sm hover:border-brand-200/80 hover:shadow-md active:scale-[0.995] transition-all';
     card.onclick = () => openModal(emp);
 
-    const previewNums = renderPreviewNumbers(numbers, 2);
-
-    const moreTag = numbers.length > 2
-      ? `<p class="text-[11px] sm:text-xs text-brand-600 font-semibold mt-1.5">+${numbers.length - 2} more extension${numbers.length-2>1?'s':''} →</p>` : '';
-
     card.innerHTML = `
-      <div class="flex items-start gap-3 mb-2 sm:mb-3">
-        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0 relative shadow-sm" style="background-color:${c.bg};color:${c.text}">
+      <div class="emp-card-header flex items-start gap-3">
+        <div class="w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 relative ring-2 ring-white shadow-sm" style="background-color:${c.bg};color:${c.text}">
           ${initials}
-          ${isMulti ? `<span class="absolute -top-1 -right-1 sm:-top-1.5 sm:-right-1.5 w-4 h-4 sm:w-5 sm:h-5 bg-brand-500 text-white rounded-full flex items-center justify-center text-[9px] sm:text-[10px] font-bold leading-none ring-2 ring-white">${numbers.length}</span>` : ''}
+          ${isMulti ? `<span class="absolute -top-1 -right-1 w-4 h-4 bg-brand-600 text-white rounded-full flex items-center justify-center text-[9px] font-bold leading-none ring-2 ring-white">${numbers.length}</span>` : ''}
         </div>
-        <div class="min-w-0 flex-1">
-          <p class="font-semibold text-slate-800 text-sm leading-tight truncate">${emp.name}</p>
-          <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">${emp.dept}${emp.works_for_station ? ` · <span class="text-amber-700 font-medium">→ ${emp.works_for_station}</span>` : ''}</p>
+        <div class="min-w-0 flex-1 pt-0.5">
+          <p class="font-semibold text-slate-900 text-sm sm:text-[15px] leading-snug line-clamp-2">${emp.name}</p>
+          <p class="text-xs text-slate-500 mt-1 line-clamp-2 leading-snug">${emp.dept}${emp.works_for_station ? ` · <span class="text-amber-700 font-medium">→ ${emp.works_for_station}</span>` : ''}</p>
         </div>
       </div>
-      <div>${previewNums}${moreTag}</div>
-      <div class="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-        <span class="badge text-[10px] sm:text-[11px]" style="background-color:${c.bg};color:${c.text}">${badgeParts.join(' · ')}</span>
+      <div class="emp-card-body">${renderCardContact(numbers)}</div>
+      <div class="emp-card-footer min-w-0">
+        <span class="emp-card-badge" title="${badgeLabel}">${badgeLabel}</span>
       </div>`;
     grid.appendChild(card);
   });
