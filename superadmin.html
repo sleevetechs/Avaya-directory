@@ -98,6 +98,14 @@
         </table>
       </div>
     </div>
+
+    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 mt-6">
+      <h3 class="text-base font-bold text-slate-800">Employee name editors</h3>
+      <p class="text-xs text-slate-500 mt-1">Once an employee is added, their name is locked. Only <span class="font-semibold">Super Admin</span> and up to <span class="font-semibold">2 admins</span> below can change names.</p>
+      <div id="nameEditorList" class="mt-4 space-y-2"></div>
+      <p id="nameEditorError" class="hidden mt-3 text-sm text-red-600 font-medium"></p>
+      <button type="button" onclick="saveNameEditors()" class="mt-4 px-4 py-2.5 text-sm bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer">Save name editors</button>
+    </div>
   </div>
 
   <div id="panelLogs" class="hidden">
@@ -256,6 +264,7 @@ async function loadAdmins() {
     const res = await fetch('/api/admins', { headers: { 'Authorization': 'Bearer ' + getToken() } });
     if (res.status === 401 || res.status === 403) { logout(); return; }
     const data = await res.json();
+    window._adminList = data;
     const tbody = document.getElementById('adminTable');
     tbody.innerHTML = '';
     const PRIMARY = 'super-admin@compasslog.com';
@@ -277,7 +286,71 @@ async function loadAdmins() {
         </td>`;
       tbody.appendChild(tr);
     });
+    renderNameEditorRadios(data);
   } catch { showToast('Error loading admins', '#dc2626'); }
+}
+
+function renderNameEditorRadios(admins) {
+  const list = document.getElementById('nameEditorList');
+  if (!list) return;
+  list.innerHTML = '';
+  admins.filter(a => a.is_active).forEach(a => {
+    const isSuper = a.role === 'super_admin';
+    const yes = isSuper || !!a.can_edit_employee_names;
+    const row = document.createElement('div');
+    row.className = 'flex flex-wrap items-center justify-between gap-3 py-2.5 px-3 rounded-xl border border-slate-100 bg-slate-50/60';
+    row.innerHTML = `
+      <div class="min-w-0">
+        <p class="font-semibold text-sm text-slate-800">${a.name}${isSuper ? ' <span class="text-[10px] font-bold text-brand-600 uppercase">Always allowed</span>' : ''}</p>
+        <p class="text-xs text-slate-500 truncate">${a.email} · ${a.role}</p>
+      </div>
+      <div class="flex items-center gap-4 shrink-0 text-sm">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer ${isSuper ? 'opacity-60' : ''}">
+          <input type="radio" name="nameEditor_${a.id}" value="0" class="name-editor-radio" data-admin-id="${a.id}" ${!yes ? 'checked' : ''} ${isSuper ? 'disabled' : ''} />
+          <span>No</span>
+        </label>
+        <label class="inline-flex items-center gap-1.5 cursor-pointer ${isSuper ? 'opacity-60' : ''}">
+          <input type="radio" name="nameEditor_${a.id}" value="1" class="name-editor-radio" data-admin-id="${a.id}" ${yes ? 'checked' : ''} ${isSuper ? 'disabled' : ''} />
+          <span>Yes</span>
+        </label>
+      </div>`;
+    list.appendChild(row);
+  });
+}
+
+async function saveNameEditors() {
+  const errEl = document.getElementById('nameEditorError');
+  errEl.classList.add('hidden');
+  const ids = [];
+  document.querySelectorAll('.name-editor-radio:checked').forEach(r => {
+    if (r.value === '1') ids.push(parseInt(r.dataset.adminId, 10));
+  });
+  const nonSuperIds = ids.filter(id => {
+    const a = (window._adminList || []).find(x => x.id === id);
+    return a && a.role !== 'super_admin';
+  });
+  if (nonSuperIds.length > 2) {
+    errEl.textContent = 'Choose at most 2 admins (Super Admin always has access).';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  try {
+    const res = await fetch('/api/admins/name-editors', {
+      method: 'PUT',
+      headers: getHeaders(),
+      body: JSON.stringify({ adminIds: nonSuperIds }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Failed to save';
+      errEl.classList.remove('hidden');
+      return;
+    }
+    showToast('Name editors saved', '#059669');
+    loadAdmins();
+  } catch {
+    showToast('Network error', '#dc2626');
+  }
 }
 
 function openAddAdminModal() {

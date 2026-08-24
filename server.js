@@ -197,6 +197,41 @@ async function ensureAdminRoleColumn() {
   }
 }
 
+async function ensureAdminNameEditColumn() {
+  try {
+    await pool.execute(
+      `ALTER TABLE admins ADD COLUMN can_edit_employee_names TINYINT(1) NOT NULL DEFAULT 0`
+    );
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+  }
+}
+
+async function adminCanEditEmployeeName(admin) {
+  if (!admin || !admin.id) return false;
+  if (admin.role === 'super_admin') return true;
+  if (admin.can_edit_employee_names !== undefined) {
+    return !!admin.can_edit_employee_names;
+  }
+  const [rows] = await pool.execute(
+    'SELECT role, can_edit_employee_names FROM admins WHERE id = ? AND is_active = 1',
+    [admin.id]
+  );
+  if (!rows.length) return false;
+  if (rows[0].role === 'super_admin') return true;
+  return !!rows[0].can_edit_employee_names;
+}
+
+function adminPayloadFromRow(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role,
+    can_edit_employee_names: row.role === 'super_admin' || !!row.can_edit_employee_names,
+  };
+}
+
 function normalizeWorksForStation(value) {
   const s = String(value == null ? '' : value).trim();
   if (!s || /^none$/i.test(s) || s === '—') return '';
@@ -799,7 +834,7 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign({ id: admin.id, name: admin.name, email: admin.email, role: admin.role }, JWT_SECRET, { expiresIn: '24h' });
     await logAction(admin.id, 'login', 'admin', admin.id, null, null);
     debug('Login successful (admin id=' + admin.id + ' role=' + admin.role + ')');
-    res.json({ success: true, token, admin: { id: admin.id, name: admin.name, email: admin.email, role: admin.role } });
+    res.json({ success: true, token, admin: adminPayloadFromRow(admin) });
   } catch (e) {
     debug('Login route failed', e);
     res.status(500).json({ error: e.message, code: e.code || null });
@@ -1471,7 +1506,12 @@ app.put('/api/employees/:id', adminOnly, async (req, res) => {
     const [emps] = await pool.execute('SELECT * FROM employees WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
     if (!emps.length) return res.status(404).json({ error: 'Not found' });
     const old = emps[0];
-    const { name, dept, numbers } = req.body;
+    let { name, dept, numbers } = req.body;
+    if (name !== undefined && String(name).trim() !== String(old.name).trim()) {
+      if (!(await adminCanEditEmployeeName(req.admin))) {
+        return res.status(403).json({ error: 'Only designated name editors can change employee names' });
+      }
+    }
     const email = req.body.email !== undefined ? normalizeEmail(req.body.email) : old.email;
     let branch = req.body.branch !== undefined ? req.body.branch : old.branch;
     let station_name = req.body.station_name !== undefined ? String(req.body.station_name || '').trim() : (old.station_name || '');
@@ -1596,9 +1636,13 @@ app.post('/api/employees/import', adminOnly, async (req, res) => {
         }
 
         if (existing) {
+          let finalName = name;
+          if (String(name).trim() !== String(existing.name).trim() && !(await adminCanEditEmployeeName(req.admin))) {
+            finalName = existing.name;
+          }
           await pool.execute(
             'UPDATE employees SET name = ?, email = ?, dept = ?, branch = ?, state_name = ?, station_name = ?, works_for_station = ?, location_id = ?, updated_by = ? WHERE id = ?',
-            [name, email !== null ? email : existing.email, dept, loc.country_name || loc.branch_name, loc.state_name || '', loc.name, works_for_station, loc.id, req.admin.id, existing.id]
+            [finalName, email !== null ? email : existing.email, dept, loc.country_name || loc.branch_name, loc.state_name || '', loc.name, works_for_station, loc.id, req.admin.id, existing.id]
           );
           const hasNums = numbers.some(n => n.ext || n.mobile || n.sd || n.sdNo);
           if (hasNums) await upsertEmployeeNumbers(existing.id, numbers);
@@ -1762,7 +1806,7 @@ app.post('/api/employees/:id/extension-removals/:removalId/confirm', adminOnly, 
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
-// ── Cancel pending extension removal ──
+// ── Cancel pending extension removal (reverts extension to old values) ──
 app.post('/api/employees/:id/extension-removals/:removalId/cancel', adminOnly, async (req, res) => {
   try {
     const [rows] = await pool.execute(
@@ -1771,17 +1815,64 @@ app.post('/api/employees/:id/extension-removals/:removalId/cancel', adminOnly, a
       [req.params.removalId, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Pending removal not found' });
-    await pool.execute('UPDATE employee_number_removals SET cancelled_at = NOW() WHERE id = ?', [rows[0].id]);
-    await logAction(req.admin.id, 'extension_removal_cancel', 'employee', parseInt(req.params.id), rows[0], { cancelled_by: req.admin.id });
-    res.json({ success: true, message: 'Avaya removal request cancelled' });
+    const row = rows[0];
+
+    if (row.reason === 'changed' && row.employee_number_id) {
+      await pool.execute(
+        `UPDATE employee_numbers SET label = ?, ext = ?, mobile = ?, sd = ?, sd_no = ? WHERE id = ? AND employee_id = ?`,
+        [row.label || '', row.ext || '', row.mobile || '', row.sd || '', row.sd_no || '', row.employee_number_id, req.params.id]
+      );
+    } else if (row.reason === 'removed') {
+      await pool.execute(
+        `INSERT INTO employee_numbers (employee_id, label, ext, mobile, sd, sd_no)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [req.params.id, row.label || 'Ext', row.ext || '', row.mobile || '', row.sd || '', row.sd_no || '']
+      );
+      await renumberEmployeeExtLabels(req.params.id);
+    }
+
+    await pool.execute('UPDATE employee_number_removals SET cancelled_at = NOW() WHERE id = ?', [row.id]);
+    await pool.execute('UPDATE employees SET updated_by = ? WHERE id = ?', [req.admin.id, req.params.id]);
+    await logAction(req.admin.id, 'extension_removal_cancel', 'employee', parseInt(req.params.id), row, { cancelled_by: req.admin.id, reverted: true });
+    res.json({ success: true, message: 'Change reverted — old extension restored' });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
 // ── Super Admin: Get all admins ──
 app.get('/api/admins', superAdmin, async (req, res) => {
   try {
-    const [rows] = await pool.execute('SELECT id, name, email, role, is_active, created_at, updated_at FROM admins ORDER BY id');
+    const [rows] = await pool.execute(
+      'SELECT id, name, email, role, is_active, can_edit_employee_names, created_at, updated_at FROM admins ORDER BY id'
+    );
     res.json(rows);
+  } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
+});
+
+// ── Super Admin: Set who can edit employee names (max 2, plus super_admin always) ──
+app.put('/api/admins/name-editors', superAdmin, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.adminIds)
+      ? [...new Set(req.body.adminIds.map((id) => parseInt(id, 10)).filter((id) => id > 0))]
+      : [];
+    if (ids.length > 2) {
+      return res.status(400).json({ error: 'Maximum 2 name editors allowed (Super Admin always has access)' });
+    }
+    if (ids.length) {
+      const placeholders = ids.map(() => '?').join(',');
+      const [found] = await pool.execute(
+        `SELECT id FROM admins WHERE id IN (${placeholders}) AND is_active = 1 AND role != 'super_admin'`,
+        ids
+      );
+      if (found.length !== ids.length) {
+        return res.status(400).json({ error: 'One or more selected admins are invalid' });
+      }
+    }
+    await pool.execute(`UPDATE admins SET can_edit_employee_names = 0 WHERE role != 'super_admin'`);
+    for (const id of ids) {
+      await pool.execute('UPDATE admins SET can_edit_employee_names = 1 WHERE id = ?', [id]);
+    }
+    await logAction(req.admin.id, 'update_name_editors', 'admin', null, null, { adminIds: ids });
+    res.json({ success: true, adminIds: ids });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
@@ -2751,9 +2842,16 @@ app.delete('/api/access/passcodes/:id', adminOnly, async (req, res) => {
 });
 
 // ── Verify auth token ──
-app.get('/api/verify', auth, (req, res) => {
-  debug('ENTERED GET /api/verify');
-  res.json({ valid: true, admin: req.admin });
+app.get('/api/verify', auth, async (req, res) => {
+  try {
+    debug('ENTERED GET /api/verify');
+    const [rows] = await pool.execute(
+      'SELECT id, name, email, role, can_edit_employee_names FROM admins WHERE id = ? AND is_active = 1',
+      [req.admin.id]
+    );
+    if (!rows.length) return res.status(401).json({ error: 'Invalid token' });
+    res.json({ valid: true, admin: adminPayloadFromRow(rows[0]) });
+  } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
 // ── Serve pages ──
@@ -2856,6 +2954,13 @@ async function bootSchema() {
     debug('bootSchema: admins.role column ready');
   } catch (e) {
     debug('bootSchema: failed to ensure admins.role column', e);
+  }
+  try {
+    debug('bootSchema: ensuring admins.can_edit_employee_names column...');
+    await ensureAdminNameEditColumn();
+    debug('bootSchema: admins.can_edit_employee_names column ready');
+  } catch (e) {
+    debug('bootSchema: failed to ensure admins.can_edit_employee_names column', e);
   }
   debug('bootSchema: completed');
 }

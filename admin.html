@@ -412,6 +412,7 @@
       <div class="mb-4">
         <label class="block text-xs font-semibold text-slate-600 mb-1.5">Name *</label>
         <input id="empName" required class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none bg-white" />
+        <p id="empNameHint" class="hidden mt-1.5 text-[11px] text-amber-700">Name is locked. Only designated name editors can change it.</p>
       </div>
       <div class="mb-4">
         <label class="block text-xs font-semibold text-slate-600 mb-1.5">Email</label>
@@ -870,6 +871,23 @@ function isManagerRole() {
   return adminUser && adminUser.role === 'manager';
 }
 
+function canEditEmployeeName() {
+  if (!adminUser) return false;
+  if (adminUser.role === 'super_admin') return true;
+  return !!adminUser.can_edit_employee_names;
+}
+
+function applyEmployeeNameFieldLock(isEdit) {
+  const nameEl = document.getElementById('empName');
+  const hint = document.getElementById('empNameHint');
+  if (!nameEl) return;
+  const locked = !!isEdit && !canEditEmployeeName();
+  nameEl.disabled = locked;
+  nameEl.classList.toggle('bg-slate-100', locked);
+  nameEl.classList.toggle('cursor-not-allowed', locked);
+  if (hint) hint.classList.toggle('hidden', !locked);
+}
+
 function roleDisplayLabel(role) {
   if (role === 'super_admin') return 'Super Admin';
   if (role === 'manager') return 'Manager';
@@ -1243,6 +1261,7 @@ function openAddModal() {
   populateEmpDepartments();
   populateEmpWorksFor();
   populateEmpLocationsForPlace();
+  applyEmployeeNameFieldLock(false);
   document.getElementById('empModal').classList.remove('hidden');
 }
 
@@ -1260,6 +1279,7 @@ function openEditModal(id) {
   document.getElementById('empExtSection').classList.add('hidden');
   document.getElementById('empExtHint').classList.remove('hidden');
   document.getElementById('empError').classList.add('hidden');
+  applyEmployeeNameFieldLock(true);
   document.getElementById('empModal').classList.remove('hidden');
 }
 
@@ -1374,6 +1394,10 @@ async function handleEmpSubmit(e) {
     location_id: parseInt(document.getElementById('empLocation').value, 10) || null,
     works_for_station: document.getElementById('empWorksFor').value || '',
   };
+  if (id && !canEditEmployeeName()) {
+    const emp = employees.find(e => String(e.id) === String(id));
+    if (emp) body.name = emp.name;
+  }
   if (!id) {
     body.numbers = [{
       label: 'Ext 1',
@@ -1542,7 +1566,7 @@ function renderExtList(emp) {
       </div>
       <div class="flex flex-col gap-1 shrink-0">
         ${confirmBtn}
-        <button type="button" onclick="cancelExtRemoval(${emp.id}, ${r.id})" class="px-2 py-1 text-xs text-slate-600 hover:text-brand-700 cursor-pointer">Cancel</button>
+        <button type="button" onclick="cancelExtRemoval(${emp.id}, ${r.id})" class="px-2 py-1 text-xs text-slate-600 hover:text-brand-700 cursor-pointer">Revert</button>
       </div>
     </div>`;
   }).join('');
@@ -1657,7 +1681,7 @@ async function confirmExtRemoval(empId, removalId) {
 }
 
 async function cancelExtRemoval(empId, removalId) {
-  if (!confirm('Cancel this Avaya removal reminder?')) return;
+  if (!confirm('Revert this change and restore the old extension number in the directory?')) return;
   try {
     const res = await fetch('/api/employees/' + empId + '/extension-removals/' + removalId + '/cancel', {
       method: 'POST',
@@ -1666,7 +1690,7 @@ async function cancelExtRemoval(empId, removalId) {
     if (res.status === 401) { logout(); return; }
     const data = await res.json();
     if (!res.ok) { showToast(data.error || 'Failed', '#dc2626'); return; }
-    showToast('Avaya removal request cancelled', '#059669');
+    showToast(data.message || 'Old extension restored', '#059669');
     await loadEmployees();
     await syncExtModalEmployee(empId);
   } catch { showToast('Error', '#dc2626'); }
@@ -3088,11 +3112,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     const verifyRes = await fetch('/api/verify', { headers: { 'Authorization': 'Bearer ' + token } });
     if (!verifyRes.ok) { logout(); return; }
+    const verifyData = await verifyRes.json();
+    adminUser = { ...JSON.parse(stored), ...(verifyData.admin || {}) };
   } catch {
     window.location.href = '/login';
     return;
   }
-  adminUser = JSON.parse(stored);
   if (adminUser.role === 'viewer') { window.location.href = '/'; return; }
   if (!STAFF_PANEL_ROLES.has(adminUser.role)) { window.location.href = '/'; return; }
   applyManagerRoleUi();
