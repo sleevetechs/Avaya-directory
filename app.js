@@ -751,7 +751,7 @@ function renderStationStrip() {
     const isActive = selectedCountry === c.name;
     const chip = document.createElement('button');
     chip.type = 'button';
-    chip.className = 'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold border transition-all cursor-pointer' +
+    chip.className = 'inline-flex items-center gap-1.5 sm:gap-2 px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg sm:rounded-xl text-xs sm:text-sm font-semibold border transition-all cursor-pointer shrink-0 snap-start whitespace-nowrap' +
       (isActive ? ' ring-2 ring-brand-600/30 border-brand-600' : ' border-transparent hover:ring-1 hover:ring-black/10');
     if (isActive) {
       chip.style.backgroundColor = '#296F35';
@@ -772,7 +772,7 @@ function renderStationStrip() {
 function cardButtonHtml(opts) {
   const { id, title, subtitle, phone, active, onClick } = opts;
   return `<button type="button" onclick="${onClick}"
-    class="text-left rounded-2xl border p-4 transition-all cursor-pointer ${
+    class="text-left rounded-xl sm:rounded-2xl border p-3 sm:p-4 transition-all cursor-pointer ${
       active
         ? 'bg-brand-600 text-white border-brand-600 shadow-md ring-2 ring-brand-600/30'
         : 'bg-white text-slate-800 border-brand-200 hover:border-brand-400 hover:shadow-sm'
@@ -962,6 +962,26 @@ function clearFilters() {
   applyFilters();
 }
 
+function renderPreviewNumbers(numbers, limit) {
+  const slice = numbers.slice(0, limit);
+  return slice.map((n, idx) => {
+    const label = n.label || (numbers.length > 1 ? `Ext ${idx + 1}` : '');
+    const tel = n.mobile ? n.mobile.replace(/[\s.]/g, '') : '';
+    const sdBits = [];
+    if (n.sd) sdBits.push(`DL <span class="font-mono text-slate-600">${cleanNum(n.sd)}</span>`);
+    if (n.sdNo) sdBits.push(`SD <span class="font-mono text-slate-600">${cleanNum(n.sdNo)}</span>`);
+    return `
+      <div class="${idx ? 'pt-1.5 mt-1.5 border-t border-slate-100' : ''}">
+        <div class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          ${label ? `<span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide shrink-0">${label}</span>` : ''}
+          ${n.ext ? `<span class="font-mono font-semibold text-slate-800 text-sm leading-none">${cleanNum(n.ext)}</span>` : ''}
+          ${n.mobile ? `<a href="tel:${tel}" onclick="event.stopPropagation()" class="text-slate-500 text-xs leading-none hover:text-brand-600">${cleanNum(n.mobile)}</a>` : ''}
+        </div>
+        ${sdBits.length ? `<p class="text-[11px] text-slate-400 mt-0.5 leading-snug">${sdBits.join(' · ')}</p>` : ''}
+      </div>`;
+  }).join('');
+}
+
 function renderGrid(data) {
   const grid  = document.getElementById('employeeGrid');
   const empty = document.getElementById('emptyState');
@@ -979,37 +999,28 @@ function renderGrid(data) {
     const badgeParts = placeLabelParts(emp.branch, emp.state_name, locLabel);
 
     const card = document.createElement('div');
-    card.className = 'bg-white rounded-2xl border border-slate-200/80 p-5 card-hover shadow-sm' + (isMulti ? ' border-l-[3px] border-l-brand-500' : '');
+    card.className = 'bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-3.5 sm:p-5 card-hover shadow-sm active:scale-[0.99] transition-transform' + (isMulti ? ' border-l-[3px] border-l-brand-500' : '');
     card.onclick = () => openModal(emp);
 
-    const previewNums = numbers.slice(0, 2).map(n => `
-      <div class="flex items-start gap-2 text-xs">
-        <div class="flex-1 space-y-1">
-          ${n.label ? `<p class="text-slate-400 font-semibold uppercase tracking-wider" style="font-size:10px">${n.label}</p>` : ''}
-          ${n.ext    ? `<p class="font-mono font-semibold text-slate-800 text-sm">${cleanNum(n.ext)}</p>` : ''}
-          ${n.mobile ? `<p class="text-slate-500 text-xs">${cleanNum(n.mobile)}</p>` : ''}
-          ${n.sd     ? `<div class="flex gap-2 items-baseline"><p class="text-slate-400">DL <span class="font-mono text-slate-700">${cleanNum(n.sd)}</span></p>${n.sdNo ? `<p class="text-slate-400">SD <span class="font-mono text-slate-700">${cleanNum(n.sdNo)}</span></p>` : ''}</div>` : ''}
-          ${!n.sd && n.sdNo ? `<p class="text-slate-400">SD <span class="font-mono text-slate-700">${cleanNum(n.sdNo)}</span></p>` : ''}
-        </div>
-      </div>`).join('');
+    const previewNums = renderPreviewNumbers(numbers, 2);
 
     const moreTag = numbers.length > 2
-      ? `<p class="text-xs text-brand-600 font-semibold mt-2">+${numbers.length - 2} more extension${numbers.length-2>1?'s':''} →</p>` : '';
+      ? `<p class="text-[11px] sm:text-xs text-brand-600 font-semibold mt-1.5">+${numbers.length - 2} more extension${numbers.length-2>1?'s':''} →</p>` : '';
 
     card.innerHTML = `
-      <div class="flex items-start gap-3.5 mb-3">
-        <div class="w-10 h-10 rounded-xl ${c.bg} ${c.text} flex items-center justify-center text-sm font-bold flex-shrink-0 relative shadow-sm">
+      <div class="flex items-start gap-3 mb-2 sm:mb-3">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center text-xs sm:text-sm font-bold flex-shrink-0 relative shadow-sm" style="background-color:${c.bg};color:${c.text}">
           ${initials}
-          ${isMulti ? `<span class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-brand-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold leading-none ring-2 ring-white">${numbers.length}</span>` : ''}
+          ${isMulti ? `<span class="absolute -top-1 -right-1 sm:-top-1.5 sm:-right-1.5 w-4 h-4 sm:w-5 sm:h-5 bg-brand-500 text-white rounded-full flex items-center justify-center text-[9px] sm:text-[10px] font-bold leading-none ring-2 ring-white">${numbers.length}</span>` : ''}
         </div>
         <div class="min-w-0 flex-1">
           <p class="font-semibold text-slate-800 text-sm leading-tight truncate">${emp.name}</p>
-          <p class="text-xs text-slate-500 mt-0.5 truncate">${emp.dept}${emp.works_for_station ? ` · <span class="text-amber-700 font-medium">→ ${emp.works_for_station}</span>` : ''}</p>
+          <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">${emp.dept}${emp.works_for_station ? ` · <span class="text-amber-700 font-medium">→ ${emp.works_for_station}</span>` : ''}</p>
         </div>
       </div>
-      <div class="space-y-1">${previewNums}${moreTag}</div>
-      <div class="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-        <span class="badge" style="background-color:${c.bg};color:${c.text}">${badgeParts.join(' · ')}</span>
+      <div>${previewNums}${moreTag}</div>
+      <div class="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+        <span class="badge text-[10px] sm:text-[11px]" style="background-color:${c.bg};color:${c.text}">${badgeParts.join(' · ')}</span>
       </div>`;
     grid.appendChild(card);
   });
@@ -1048,11 +1059,11 @@ function openModal(emp) {
     </div>`).join('');
 
   document.getElementById('modalContent').innerHTML = `
-    <div class="p-6 max-h-[85vh] overflow-y-auto">
-      <div class="flex items-start gap-4 mb-6">
-        <div class="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold flex-shrink-0 shadow-sm" style="background-color:${c.bg};color:${c.text}">${initials}</div>
+    <div class="p-4 sm:p-6 max-h-[90vh] sm:max-h-[85vh] overflow-y-auto">
+      <div class="flex items-start gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div class="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl flex items-center justify-center text-lg sm:text-xl font-bold flex-shrink-0 shadow-sm" style="background-color:${c.bg};color:${c.text}">${initials}</div>
         <div class="min-w-0 flex-1">
-          <h2 class="text-lg font-bold text-slate-800 leading-tight">${emp.name}</h2>
+          <h2 class="text-base sm:text-lg font-bold text-slate-800 leading-tight">${emp.name}</h2>
           <p class="text-slate-500 text-sm mt-0.5">${emp.dept}${emp.works_for_station ? ` · <span class="text-amber-700 font-medium">→ ${emp.works_for_station}</span>` : ''}</p>
           <div class="flex flex-wrap gap-2 mt-2">
             <span class="badge" style="background-color:${c.bg};color:${c.text}">${badgeParts.join(' · ')}</span>
