@@ -229,7 +229,7 @@ function setSyncBanner(mode, updatedAt) {
     inner.innerHTML = `<span>Updating directory from server…</span>`;
   } else if (mode === 'cached') {
     inner.className = 'mt-3 rounded-xl px-3.5 py-2.5 text-xs font-medium flex items-center justify-between gap-3 border bg-slate-50 border-slate-200 text-slate-700';
-    inner.innerHTML = `<span>Showing saved list${when ? ' from ' + when : ''}. Will refresh when online.</span>
+    inner.innerHTML = `<span>Showing saved directory${when ? ' from ' + when : ''}. Connect to office network to refresh.</span>
       <button type="button" onclick="refreshDirectoryFromNetwork({ force: true })" class="shrink-0 underline font-semibold cursor-pointer">Refresh</button>`;
   }
 }
@@ -315,15 +315,12 @@ async function loadDirectoryData(options = {}) {
       fetch('/api/directory-tree', { headers, cache: 'no-store' }),
     ]);
     if (empRes.status === 403 || treeRes.status === 403) {
-      // Background sync must not wipe a good local copy
-      if (background || silent) {
-        const cached = await loadDirectoryCache();
-        if (cached) {
-          lastDirectorySyncAt = cached.updatedAt || 0;
-          applyDirectoryData(cached.employees, cached.tree, 'cache');
-          setSyncBanner('cached', cached.updatedAt);
-          return true;
-        }
+      const cached = await loadDirectoryCache();
+      if (cached) {
+        lastDirectorySyncAt = cached.updatedAt || 0;
+        applyDirectoryData(cached.employees, cached.tree, 'cache');
+        setSyncBanner('cached', cached.updatedAt);
+        return true;
       }
       lockDirectoryForPasscode((await empRes.json().catch(() => ({}))).clientIp);
       return false;
@@ -635,6 +632,12 @@ async function ensureDirectoryAccess() {
       hideAccessGate();
       if (data.reason === 'passcode' && getDirectoryAccessToken()) startAccessWatch();
       else stopAccessWatch();
+      return true;
+    }
+    // Outside office network but we have a saved copy from a previous office visit
+    if (await hasDirectoryCache()) {
+      hideAccessGate();
+      stopAccessWatch();
       return true;
     }
     showAccessGate(shownIp, { officeIpOnly: data.officeIpOnly === true });
