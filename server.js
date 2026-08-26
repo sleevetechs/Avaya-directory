@@ -426,24 +426,32 @@ async function lookupPublicIp() {
   return '';
 }
 
+/** ISP public IP reported by the visitor's browser (ipify), sent on each request. */
+function getBrowserPublicIps(req) {
+  const ips = [];
+  const add = (raw) => {
+    for (const part of String(raw || '').split(',')) {
+      const v = normalizeIp(part.trim());
+      if (v && isValidIp(v) && !isLoopbackOrPrivateIp(v) && !ips.includes(v)) ips.push(v);
+    }
+  };
+  add(req.headers['x-client-public-ips']);
+  add(req.headers['x-client-public-ip']);
+  return ips;
+}
+
 /**
- * Per-visitor public IP for office whitelist.
- * Only trust THIS request's browser header or THIS TCP connection — never the server's egress IP.
+ * IP shown in logs / admin — prefer browser-detected ISP IP (matches whitelist entries).
  */
 async function resolveClientIp(req) {
-  // Prefer proxy headers (IIS ARR) — real visitor IP, not the server's own IP
+  const browserIps = getBrowserPublicIps(req);
+  if (browserIps.length) return browserIps[0];
+
   const forwardedPublic = getForwardedIps(req).find((ip) => !isLoopbackOrPrivateIp(ip));
   if (forwardedPublic) return forwardedPublic;
 
-  const reported = normalizeIp(req.headers['x-client-public-ip'] || '');
-  if (reported && isValidIp(reported) && !isLoopbackOrPrivateIp(reported)) {
-    return reported;
-  }
-
   const connectionIp = getClientIp(req);
-  if (connectionIp && !isLoopbackOrPrivateIp(connectionIp)) {
-    return connectionIp;
-  }
+  if (connectionIp && !isLoopbackOrPrivateIp(connectionIp)) return connectionIp;
 
   return connectionIp || '';
 }
@@ -610,16 +618,19 @@ function hasValidDirectoryToken(req) {
 }
 
 async function evaluatePublicAccess(req) {
-  const clientIp = await resolveClientIp(req);
+  const browserIps = getBrowserPublicIps(req);
+  const clientIp = browserIps[0] || (await resolveClientIp(req));
   const enabled = await accessControlEnabled();
   const officeIpOnly = await isOfficeIpOnlyMode();
   // Until at least one office IP or passcode exists, stay open
   if (!enabled) {
-    return { allowed: true, reason: 'open', clientIp, enabled: false, officeIpOnly: false };
+    return { allowed: true, reason: 'open', clientIp, browserIps, enabled: false, officeIpOnly: false };
   }
-  // Office public IP → free access
-  if (await isIpAllowed(clientIp)) {
-    return { allowed: true, reason: 'ip', clientIp, enabled: true, officeIpOnly };
+  // Office whitelist uses browser ISP IP only (same IP shown on the access gate).
+  for (const ip of browserIps) {
+    if (await isIpAllowed(ip)) {
+      return { allowed: true, reason: 'ip', clientIp: ip, browserIps, enabled: true, officeIpOnly };
+    }
   }
   // Logged-in admin browsing the public directory
   if (getAdminFromAuthHeader(req)) {
@@ -629,11 +640,13 @@ async function evaluatePublicAccess(req) {
   if (officeIpOnly) {
     return {
       allowed: false,
-      reason: 'office_only',
+      reason: browserIps.length ? 'office_only' : 'browser_ip_missing',
       clientIp,
+      browserIps,
       enabled: true,
       officeIpOnly: true,
       requiresPasscode: false,
+      browserIpMissing: browserIps.length === 0,
     };
   }
   // Valid passcode session
@@ -643,11 +656,13 @@ async function evaluatePublicAccess(req) {
   // Everyone else must enter a passcode
   return {
     allowed: false,
-    reason: 'none',
+    reason: browserIps.length ? 'none' : 'browser_ip_missing',
     clientIp,
+    browserIps,
     enabled: true,
     officeIpOnly: false,
     requiresPasscode: true,
+    browserIpMissing: browserIps.length === 0,
   };
 }
 
@@ -657,10 +672,13 @@ async function publicDirectoryAccess(req, res, next) {
     if (result.allowed) return next();
     if (result.officeIpOnly) {
       return res.status(403).json({
-        error: 'Directory is only available from the office network',
+        error: result.browserIpMissing
+          ? 'Could not verify your network IP. Refresh the page or allow access to api.ipify.org.'
+          : 'Directory is only available from the office network',
         officeIpOnly: true,
         requiresPasscode: false,
         clientIp: result.clientIp,
+        browserIpMissing: result.browserIpMissing === true,
       });
     }
     return res.status(403).json({

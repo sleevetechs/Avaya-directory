@@ -265,7 +265,6 @@ function ensureDirectoryUiBound() {
 }
 
 async function init() {
-  await detectBrowserIps();
   const allowed = await ensureDirectoryAccess();
   if (!allowed) return;
   await loadDirectoryData();
@@ -482,13 +481,23 @@ function directoryFetchHeaders() {
   if (dirToken) headers['X-Directory-Access'] = dirToken;
   const adminToken = localStorage.getItem('token') || sessionStorage.getItem('token');
   if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
-  // Auto-detected in this visitor's browser only (never the server IP)
-  if (browserPublicIp) headers['X-Client-Public-Ip'] = browserPublicIp;
+  // Browser ISP IP(s) — used for office whitelist (must match gate display)
+  const ips = browserPublicIps.length ? browserPublicIps : (browserPublicIp ? [browserPublicIp] : []);
+  if (ips.length) {
+    headers['X-Client-Public-Ip'] = ips[0];
+    if (ips.length > 1) headers['X-Client-Public-Ips'] = ips.join(',');
+  }
   if (browserLocalIp) headers['X-Client-Local-Ip'] = browserLocalIp;
   return headers;
 }
 
 let browserPublicIp = sessionStorage.getItem('browserPublicIp') || '';
+let browserPublicIps = [];
+try {
+  browserPublicIps = JSON.parse(sessionStorage.getItem('browserPublicIps') || '[]').filter(Boolean);
+} catch (_) {
+  browserPublicIps = browserPublicIp ? [browserPublicIp] : [];
+}
 let browserLocalIp = sessionStorage.getItem('browserLocalIp') || '';
 
 function isLanIpv4(ip) {
@@ -533,7 +542,11 @@ async function detectBrowserLocalIp() {
   return browserLocalIp;
 }
 
-async function detectBrowserPublicIp() {
+async function detectBrowserPublicIp(forceRefresh = false) {
+  const found = new Set();
+  if (!forceRefresh && browserPublicIp) found.add(browserPublicIp);
+  browserPublicIps.forEach((ip) => { if (ip) found.add(ip); });
+
   const urls = [
     'https://api.ipify.org?format=json',
     'https://api64.ipify.org?format=json',
@@ -541,7 +554,7 @@ async function detectBrowserPublicIp() {
   for (const url of urls) {
     try {
       const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 3000);
+      const t = setTimeout(() => ctrl.abort(), 4000);
       const res = await fetch(url + (url.includes('?') ? '&' : '?') + '_=' + Date.now(), {
         signal: ctrl.signal,
         cache: 'no-store',
@@ -550,22 +563,27 @@ async function detectBrowserPublicIp() {
       if (!res.ok) continue;
       const data = await res.json();
       const ip = String(data.ip || '').trim();
-      if (ip) {
-        browserPublicIp = ip;
-        sessionStorage.setItem('browserPublicIp', ip);
-        return ip;
-      }
+      if (ip) found.add(ip);
     } catch (_) { /* try next */ }
+  }
+
+  const list = [...found].filter(Boolean);
+  if (list.length) {
+    const v4 = list.find((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip));
+    browserPublicIp = v4 || list[0];
+    browserPublicIps = list;
+    sessionStorage.setItem('browserPublicIp', browserPublicIp);
+    sessionStorage.setItem('browserPublicIps', JSON.stringify(list));
+    return browserPublicIp;
   }
   return browserPublicIp || sessionStorage.getItem('browserPublicIp') || '';
 }
 
-async function detectBrowserIps() {
-  await Promise.all([detectBrowserPublicIp(), detectBrowserLocalIp()]);
+async function detectBrowserIps(forceRefresh = false) {
+  await Promise.all([detectBrowserPublicIp(forceRefresh), detectBrowserLocalIp()]);
 }
 
 function pickDisplayIp(serverIp, browserIp) {
-  // Show the visitor's own public IP when the browser detects it (ipify in their PC/phone)
   if (browserIp && browserIp !== '…') return browserIp;
   if (serverIp && serverIp !== '…' && !/^127\.|^::1|^192\.168\.|^10\./.test(serverIp)) return serverIp;
   return browserIp || serverIp || '…';
@@ -573,6 +591,7 @@ function pickDisplayIp(serverIp, browserIp) {
 
 function showAccessGate(clientIp, options = {}) {
   const officeIpOnly = options.officeIpOnly === true;
+  const browserIpMissing = options.browserIpMissing === true;
   const gate = document.getElementById('accessGate');
   const shell = document.getElementById('appShell');
   const form = document.getElementById('accessGateForm');
@@ -584,10 +603,14 @@ function showAccessGate(clientIp, options = {}) {
   if (form) form.classList.toggle('hidden', officeIpOnly);
   if (officeOnly) officeOnly.classList.toggle('hidden', !officeIpOnly);
   if (subtitle) {
-    subtitle.textContent = officeIpOnly
-      ? 'Your connection is not from an allowed office IP address.'
-      : 'You are outside the office network. Enter the passcode to continue.';
-    subtitle.classList.toggle('hidden', officeIpOnly);
+    if (browserIpMissing) {
+      subtitle.textContent = 'Could not detect your network IP in this browser. Refresh the page, or allow api.ipify.org if an ad-blocker is on.';
+    } else {
+      subtitle.textContent = officeIpOnly
+        ? 'Your IP is not on the allowed office list. Ask admin to add the IP shown below.'
+        : 'You are outside the office network. Enter the passcode to continue.';
+    }
+    subtitle.classList.toggle('hidden', false);
   }
   if (err) err.classList.add('hidden');
   const shown = pickDisplayIp(clientIp, browserPublicIp);
@@ -606,7 +629,7 @@ async function ensureDirectoryAccess() {
     if (getDirectoryAccessToken() && isDirectorySessionExpired()) {
       clearDirectorySession();
     }
-    await detectBrowserIps();
+    await detectBrowserIps(true);
     const res = await fetch('/api/access/check', { headers: directoryFetchHeaders(), cache: 'no-store' });
     let data = {};
     try { data = await res.json(); } catch (_) { data = {}; }
@@ -640,7 +663,10 @@ async function ensureDirectoryAccess() {
       stopAccessWatch();
       return true;
     }
-    showAccessGate(shownIp, { officeIpOnly: data.officeIpOnly === true });
+    showAccessGate(shownIp, {
+      officeIpOnly: data.officeIpOnly === true,
+      browserIpMissing: data.browserIpMissing === true,
+    });
     stopAccessWatch();
     return false;
   } catch {
