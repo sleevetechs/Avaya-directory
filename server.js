@@ -472,7 +472,25 @@ function getReportedLocalIp(req) {
 }
 
 function normalizeIp(ip) {
-  return String(ip || '').trim().replace(/^::ffff:/i, '');
+  let v = String(ip || '').trim();
+  if (!v) return '';
+
+  // IPv6 zone id, e.g. fe80::1%eth0
+  const zoneIdx = v.indexOf('%');
+  if (zoneIdx !== -1) v = v.slice(0, zoneIdx);
+
+  // [2001:db8::1]:443
+  const bracket = v.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracket) v = bracket[1];
+
+  // IPv4-mapped IPv6
+  v = v.replace(/^::ffff:/i, '');
+
+  // 203.0.113.10:8080 — strip trailing port for IPv4 only
+  const v4Port = v.match(/^((?:\d{1,3}\.){3}\d{1,3}):(\d+)$/);
+  if (v4Port) v = v4Port[1];
+
+  return v.trim();
 }
 
 function isValidIp(ip) {
@@ -572,13 +590,14 @@ async function isOfficeIpOnlyMode() {
 
 async function isIpAllowed(ip) {
   const v = normalizeIp(ip);
-  if (!v) return false;
+  if (!v || !isValidIp(v)) return false;
   const [ipRows] = await pool.execute(
-    `SELECT id FROM access_allowed_ips
-     WHERE is_active = 1 AND entry_type = 'ip' AND ip_address = ? LIMIT 1`,
-    [v]
+    `SELECT ip_address FROM access_allowed_ips
+     WHERE is_active = 1 AND entry_type = 'ip' AND ip_address != ''`
   );
-  if (ipRows.length) return true;
+  for (const row of ipRows) {
+    if (normalizeIp(row.ip_address) === v) return true;
+  }
   const [hostRows] = await pool.execute(
     `SELECT host_name FROM access_allowed_ips
      WHERE is_active = 1 AND entry_type = 'host' AND host_name != ''`

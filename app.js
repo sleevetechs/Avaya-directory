@@ -475,6 +475,19 @@ function lockDirectoryForPasscode(clientIp) {
   }
 }
 
+function normalizeClientIp(ip) {
+  let v = String(ip || '').trim();
+  if (!v) return '';
+  const zoneIdx = v.indexOf('%');
+  if (zoneIdx !== -1) v = v.slice(0, zoneIdx);
+  const bracket = v.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracket) v = bracket[1];
+  v = v.replace(/^::ffff:/i, '');
+  const v4Port = v.match(/^((?:\d{1,3}\.){3}\d{1,3}):(\d+)$/);
+  if (v4Port) v = v4Port[1];
+  return v.trim();
+}
+
 function directoryFetchHeaders() {
   const headers = {};
   const dirToken = getDirectoryAccessToken();
@@ -483,18 +496,19 @@ function directoryFetchHeaders() {
   if (adminToken) headers['Authorization'] = 'Bearer ' + adminToken;
   // Browser ISP IP(s) — used for office whitelist (must match gate display)
   const ips = browserPublicIps.length ? browserPublicIps : (browserPublicIp ? [browserPublicIp] : []);
-  if (ips.length) {
-    headers['X-Client-Public-Ip'] = ips[0];
-    if (ips.length > 1) headers['X-Client-Public-Ips'] = ips.join(',');
+  const cleanIps = ips.map(normalizeClientIp).filter(Boolean);
+  if (cleanIps.length) {
+    headers['X-Client-Public-Ip'] = cleanIps[0];
+    if (cleanIps.length > 1) headers['X-Client-Public-Ips'] = cleanIps.join(',');
   }
   if (browserLocalIp) headers['X-Client-Local-Ip'] = browserLocalIp;
   return headers;
 }
 
-let browserPublicIp = sessionStorage.getItem('browserPublicIp') || '';
+let browserPublicIp = normalizeClientIp(sessionStorage.getItem('browserPublicIp') || '');
 let browserPublicIps = [];
 try {
-  browserPublicIps = JSON.parse(sessionStorage.getItem('browserPublicIps') || '[]').filter(Boolean);
+  browserPublicIps = JSON.parse(sessionStorage.getItem('browserPublicIps') || '[]').map(normalizeClientIp).filter(Boolean);
 } catch (_) {
   browserPublicIps = browserPublicIp ? [browserPublicIp] : [];
 }
@@ -544,8 +558,8 @@ async function detectBrowserLocalIp() {
 
 async function detectBrowserPublicIp(forceRefresh = false) {
   const found = new Set();
-  if (!forceRefresh && browserPublicIp) found.add(browserPublicIp);
-  browserPublicIps.forEach((ip) => { if (ip) found.add(ip); });
+  if (!forceRefresh && browserPublicIp) found.add(normalizeClientIp(browserPublicIp));
+  browserPublicIps.forEach((ip) => { if (ip) found.add(normalizeClientIp(ip)); });
 
   const urls = [
     'https://api.ipify.org?format=json',
@@ -562,7 +576,7 @@ async function detectBrowserPublicIp(forceRefresh = false) {
       clearTimeout(t);
       if (!res.ok) continue;
       const data = await res.json();
-      const ip = String(data.ip || '').trim();
+      const ip = normalizeClientIp(String(data.ip || '').trim());
       if (ip) found.add(ip);
     } catch (_) { /* try next */ }
   }
@@ -584,9 +598,11 @@ async function detectBrowserIps(forceRefresh = false) {
 }
 
 function pickDisplayIp(serverIp, browserIp) {
-  if (browserIp && browserIp !== '…') return browserIp;
-  if (serverIp && serverIp !== '…' && !/^127\.|^::1|^192\.168\.|^10\./.test(serverIp)) return serverIp;
-  return browserIp || serverIp || '…';
+  const b = normalizeClientIp(browserIp);
+  const s = normalizeClientIp(serverIp);
+  if (b && b !== '…') return b;
+  if (s && s !== '…' && !/^127\.|^::1|^192\.168\.|^10\./.test(s)) return s;
+  return b || s || '…';
 }
 
 function showAccessGate(clientIp, options = {}) {

@@ -922,9 +922,10 @@ function getAdmin() {
 function getHeaders() {
   const h = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() };
   const ips = browserPublicIps.length ? browserPublicIps : (browserPublicIp ? [browserPublicIp] : []);
-  if (ips.length) {
-    h['X-Client-Public-Ip'] = ips[0];
-    if (ips.length > 1) h['X-Client-Public-Ips'] = ips.join(',');
+  const cleanIps = ips.map(normalizeClientIp).filter(Boolean);
+  if (cleanIps.length) {
+    h['X-Client-Public-Ip'] = cleanIps[0];
+    if (cleanIps.length > 1) h['X-Client-Public-Ips'] = cleanIps.join(',');
   }
   return h;
 }
@@ -932,10 +933,23 @@ function getHeaders() {
 let browserPublicIp = '';
 let browserPublicIps = [];
 
+function normalizeClientIp(ip) {
+  let v = String(ip || '').trim();
+  if (!v) return '';
+  const zoneIdx = v.indexOf('%');
+  if (zoneIdx !== -1) v = v.slice(0, zoneIdx);
+  const bracket = v.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (bracket) v = bracket[1];
+  v = v.replace(/^::ffff:/i, '');
+  const v4Port = v.match(/^((?:\d{1,3}\.){3}\d{1,3}):(\d+)$/);
+  if (v4Port) v = v4Port[1];
+  return v.trim();
+}
+
 async function detectBrowserPublicIp(forceRefresh = true) {
   const found = new Set();
-  if (!forceRefresh && browserPublicIp) found.add(browserPublicIp);
-  browserPublicIps.forEach((ip) => { if (ip) found.add(ip); });
+  if (!forceRefresh && browserPublicIp) found.add(normalizeClientIp(browserPublicIp));
+  browserPublicIps.forEach((ip) => { if (ip) found.add(normalizeClientIp(ip)); });
 
   const urls = ['https://api.ipify.org?format=json', 'https://api64.ipify.org?format=json'];
   for (const url of urls) {
@@ -949,7 +963,7 @@ async function detectBrowserPublicIp(forceRefresh = true) {
       clearTimeout(t);
       if (!res.ok) continue;
       const data = await res.json();
-      const ip = String(data.ip || '').trim();
+      const ip = normalizeClientIp(String(data.ip || '').trim());
       if (ip) found.add(ip);
     } catch (_) { /* try next */ }
   }
