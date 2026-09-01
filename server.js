@@ -426,6 +426,17 @@ async function lookupPublicIp() {
   return '';
 }
 
+function getConnectionPublicIps(req) {
+  const ips = [];
+  const add = (raw) => {
+    const v = normalizeIp(raw);
+    if (v && isValidIp(v) && !isLoopbackOrPrivateIp(v) && !ips.includes(v)) ips.push(v);
+  };
+  for (const ip of getForwardedIps(req)) add(ip);
+  add(getClientIp(req));
+  return ips;
+}
+
 /** ISP public IP reported by the visitor's browser (ipify), sent on each request. */
 function getBrowserPublicIps(req) {
   const ips = [];
@@ -638,17 +649,29 @@ function hasValidDirectoryToken(req) {
 
 async function evaluatePublicAccess(req) {
   const browserIps = getBrowserPublicIps(req);
-  const clientIp = browserIps[0] || (await resolveClientIp(req));
+  const connectionIps = getConnectionPublicIps(req);
+  // Prefer browser ISP IP; fall back to this request's connection IP when ipify is blocked
+  // (Firefox Strict, ad-blockers, corporate filters).
+  const whitelistIps = browserIps.length ? browserIps : connectionIps;
+  const clientIp = browserIps[0] || connectionIps[0] || '';
   const enabled = await accessControlEnabled();
   const officeIpOnly = await isOfficeIpOnlyMode();
   // Until at least one office IP or passcode exists, stay open
   if (!enabled) {
     return { allowed: true, reason: 'open', clientIp, browserIps, enabled: false, officeIpOnly: false };
   }
-  // Office whitelist uses browser ISP IP only (same IP shown on the access gate).
-  for (const ip of browserIps) {
+  // Office whitelist — browser IP first, connection IP only when browser detection failed.
+  for (const ip of whitelistIps) {
     if (await isIpAllowed(ip)) {
-      return { allowed: true, reason: 'ip', clientIp: ip, browserIps, enabled: true, officeIpOnly };
+      return {
+        allowed: true,
+        reason: 'ip',
+        clientIp: ip,
+        browserIps,
+        ipSource: browserIps.length ? 'browser' : 'connection',
+        enabled: true,
+        officeIpOnly,
+      };
     }
   }
   // Logged-in admin browsing the public directory
@@ -2572,6 +2595,13 @@ app.delete('/api/stations/:id', fullAdminOnly, async (req, res) => {
 });
 
 // ── Public access gate (IP whitelist + passcode) ──
+app.get('/api/access/my-ip', async (req, res) => {
+  try {
+    const ips = getConnectionPublicIps(req);
+    res.json({ ip: ips[0] || '', ips });
+  } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/access/check', async (req, res) => {
   try {
     debug('ENTERED GET /api/access/check');

@@ -581,6 +581,18 @@ async function detectBrowserPublicIp(forceRefresh = false) {
     } catch (_) { /* try next */ }
   }
 
+  // Same-origin fallback when ipify is blocked (Firefox Strict, ad-blockers, etc.)
+  if (!found.size) {
+    try {
+      const res = await fetch('/api/access/my-ip?_=' + Date.now(), { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const ip = normalizeClientIp(String(data.ip || '').trim());
+        if (ip) found.add(ip);
+      }
+    } catch (_) { /* ignore */ }
+  }
+
   const list = [...found].filter(Boolean);
   if (list.length) {
     const v4 = list.find((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip));
@@ -620,7 +632,7 @@ function showAccessGate(clientIp, options = {}) {
   if (officeOnly) officeOnly.classList.toggle('hidden', !officeIpOnly);
   if (subtitle) {
     if (browserIpMissing) {
-      subtitle.textContent = 'Could not detect your network IP in this browser. Refresh the page, or allow api.ipify.org if an ad-blocker is on.';
+      subtitle.textContent = 'Could not detect your network IP in this browser. If you use Firefox Strict privacy or an ad-blocker, switch to Standard mode or allow this site, then refresh.';
     } else {
       subtitle.textContent = officeIpOnly
         ? 'Your IP is not on the allowed office list. Ask admin to add the IP shown below.'

@@ -968,6 +968,17 @@ async function detectBrowserPublicIp(forceRefresh = true) {
     } catch (_) { /* try next */ }
   }
 
+  if (!found.size) {
+    try {
+      const res = await fetch('/api/access/my-ip?_=' + Date.now(), { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const ip = normalizeClientIp(String(data.ip || '').trim());
+        if (ip) found.add(ip);
+      }
+    } catch (_) { /* ignore */ }
+  }
+
   const list = [...found].filter(Boolean);
   if (list.length) {
     const v4 = list.find((ip) => /^(\d{1,3}\.){3}\d{1,3}$/.test(ip));
