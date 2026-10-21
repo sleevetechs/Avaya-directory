@@ -3211,8 +3211,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!verifyRes.ok) { logout(); return; }
     const verifyData = await verifyRes.json();
     adminUser = { ...JSON.parse(stored), ...(verifyData.admin || {}) };
+    const store = getAuthStore();
+    if (store && verifyData.admin) store.setItem('admin', JSON.stringify(adminUser));
   } catch {
     window.location.href = '/login';
+    return;
+  }
+  if (adminUser.must_change_password) {
+    window.location.href = '/set-password';
     return;
   }
   if (adminUser.role === 'viewer') { window.location.href = '/'; return; }

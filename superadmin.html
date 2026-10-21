@@ -680,11 +680,24 @@ async function loadLogs() {
   } catch { showToast('Error loading logs', '#dc2626'); }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const stored = localStorage.getItem('admin') || sessionStorage.getItem('admin');
   if (!stored || !getToken()) { window.location.href = '/login'; return; }
-  adminUser = JSON.parse(stored);
-  adminUser = JSON.parse(stored);
+  try {
+    const verifyRes = await fetch('/api/verify', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (!verifyRes.ok) { window.location.href = '/login'; return; }
+    const verifyData = await verifyRes.json();
+    adminUser = { ...JSON.parse(stored), ...(verifyData.admin || {}) };
+    const store = localStorage.getItem('token') ? localStorage : sessionStorage;
+    store.setItem('admin', JSON.stringify(adminUser));
+  } catch {
+    window.location.href = '/login';
+    return;
+  }
+  if (adminUser.must_change_password) {
+    window.location.href = '/set-password';
+    return;
+  }
   if (adminUser.role !== 'super_admin') { window.location.href = '/admin'; return; }
   document.getElementById('adminInfo').textContent = adminUser.name + ' (Super Admin)';
   loadAdmins();

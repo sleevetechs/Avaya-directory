@@ -207,6 +207,40 @@ async function ensureAdminNameEditColumn() {
   }
 }
 
+async function ensureAdminMustChangePasswordColumn() {
+  try {
+    await pool.execute(
+      `ALTER TABLE admins ADD COLUMN must_change_password TINYINT(1) NOT NULL DEFAULT 1`
+    );
+  } catch (e) {
+    if (e.code !== 'ER_DUP_FIELDNAME') throw e;
+  }
+}
+
+function validateAdminPasswordPolicy(password) {
+  const s = String(password || '');
+  if (s.length < 8) return 'Password must be at least 8 characters';
+  if (!/[a-z]/.test(s)) return 'Password must include a lowercase letter';
+  if (!/[A-Z]/.test(s)) return 'Password must include an uppercase letter';
+  if (!/[0-9]/.test(s)) return 'Password must include a number';
+  if (!/[^A-Za-z0-9]/.test(s)) return 'Password must include a special character';
+  return null;
+}
+
+function authPasswordChangeExempt(req) {
+  if (req.method === 'GET' && req.path === '/api/verify') return true;
+  if (req.method === 'POST' && req.path === '/api/auth/change-password') return true;
+  return false;
+}
+
+async function adminMustChangePassword(adminId) {
+  const [rows] = await pool.execute(
+    'SELECT must_change_password FROM admins WHERE id = ? AND is_active = 1',
+    [adminId]
+  );
+  return rows.length ? !!rows[0].must_change_password : false;
+}
+
 async function ensureAccessIpGrantsTable() {
   await pool.execute(`
     CREATE TABLE IF NOT EXISTS admin_access_ip_grants (
@@ -295,6 +329,7 @@ function adminPayloadFromRow(row, extra = {}) {
     email: row.email,
     role: row.role,
     can_edit_employee_names: row.role === 'super_admin' || !!row.can_edit_employee_names,
+    must_change_password: !!row.must_change_password,
     ...extra,
   };
 }
@@ -911,6 +946,15 @@ async function auth(req, res, next) {
     const decoded = jwt.verify(header.replace('Bearer ', ''), JWT_SECRET);
     req.admin = decoded;
     debug('JWT verification succeeded (admin id=' + decoded.id + ' role=' + decoded.role + ')');
+    if (!authPasswordChangeExempt(req)) {
+      const pending = await adminMustChangePassword(decoded.id);
+      if (pending) {
+        return res.status(403).json({
+          error: 'You must set a new password before continuing.',
+          must_change_password: true,
+        });
+      }
+    }
     next();
   } catch (e) {
     debug('JWT verification failed', e);
@@ -2068,7 +2112,10 @@ app.post('/api/admins', superAdmin, async (req, res) => {
       return res.status(400).json({ error: 'This email is reserved for the primary super admin' });
     }
     const hash = CryptoJS.SHA256(password).toString();
-    const [r] = await pool.execute('INSERT INTO admins (name, email, password_hash, role) VALUES (?, ?, ?, ?)', [name, email, hash, role]);
+    const [r] = await pool.execute(
+      'INSERT INTO admins (name, email, password_hash, role, must_change_password) VALUES (?, ?, ?, ?, 1)',
+      [name, email, hash, role]
+    );
     if (isIpUpdaterRole(role)) {
       await setAccessIpGrantIds(r.insertId, req.body.access_ip_ids || req.body.accessIpIds);
     }
@@ -2122,7 +2169,10 @@ app.put('/api/admins/:id', superAdmin, async (req, res) => {
       if (is_active !== undefined) { sql += ' is_active = ?,'; params.push(is_active); }
     }
 
-    if (password) { sql += ' password_hash = ?,'; params.push(CryptoJS.SHA256(password).toString()); }
+    if (password) {
+      sql += ' password_hash = ?, must_change_password = 1,';
+      params.push(CryptoJS.SHA256(password).toString());
+    }
     if (sql === 'UPDATE admins SET') return res.json({ success: true });
     sql = sql.slice(0, -1) + ' WHERE id = ?';
     params.push(parseInt(req.params.id));
@@ -3183,12 +3233,34 @@ app.delete('/api/access/passcodes/:id', adminOnly, async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/auth/change-password', auth, async (req, res) => {
+  try {
+    const newPassword = String(req.body?.new_password || req.body?.password || '');
+    const confirm = String(req.body?.confirm_password || req.body?.confirm || '');
+    if (!newPassword) return res.status(400).json({ error: 'New password required' });
+    if (newPassword !== confirm) return res.status(400).json({ error: 'Passwords do not match' });
+    const policyErr = validateAdminPasswordPolicy(newPassword);
+    if (policyErr) return res.status(400).json({ error: policyErr });
+    const hash = CryptoJS.SHA256(newPassword).toString();
+    await pool.execute(
+      'UPDATE admins SET password_hash = ?, must_change_password = 0 WHERE id = ?',
+      [hash, req.admin.id]
+    );
+    const [rows] = await pool.execute('SELECT * FROM admins WHERE id = ?', [req.admin.id]);
+    await logAction(req.admin.id, 'password_change', 'admin', req.admin.id, null, null);
+    res.json({ success: true, admin: await adminPayloadWithGrants(rows[0]) });
+  } catch (e) {
+    debug('Route failed', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Verify auth token ──
 app.get('/api/verify', auth, async (req, res) => {
   try {
     debug('ENTERED GET /api/verify');
     const [rows] = await pool.execute(
-      'SELECT id, name, email, role, can_edit_employee_names FROM admins WHERE id = ? AND is_active = 1',
+      'SELECT id, name, email, role, can_edit_employee_names, must_change_password FROM admins WHERE id = ? AND is_active = 1',
       [req.admin.id]
     );
     if (!rows.length) return res.status(401).json({ error: 'Invalid token' });
@@ -3254,6 +3326,12 @@ app.get('/', (req, res) => {
 app.get('/login', (req, res) => {
   debug('Serving static: login.html');
   res.sendFile(path.join(__dirname, 'login.html'));
+});
+app.get('/set-password', (req, res) => {
+  res.sendFile(path.join(__dirname, 'set-password.html'));
+});
+app.get('/set-password.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'set-password.html'));
 });
 app.get('/login.html', (req, res) => {
   debug('Serving static: login.html');
@@ -3344,6 +3422,13 @@ async function bootSchema() {
     debug('bootSchema: directory_change_reports table ready');
   } catch (e) {
     debug('bootSchema: failed to ensure directory_change_reports table', e);
+  }
+  try {
+    debug('bootSchema: ensuring admins.must_change_password column...');
+    await ensureAdminMustChangePasswordColumn();
+    debug('bootSchema: admins.must_change_password column ready');
+  } catch (e) {
+    debug('bootSchema: failed to ensure admins.must_change_password column', e);
   }
   debug('bootSchema: completed');
 }
