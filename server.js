@@ -207,6 +207,53 @@ async function ensureAdminNameEditColumn() {
   }
 }
 
+async function ensureAccessIpGrantsTable() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS admin_access_ip_grants (
+      admin_id INT NOT NULL,
+      access_allowed_ip_id INT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (admin_id, access_allowed_ip_id),
+      INDEX idx_access_ip_grants_ip (access_allowed_ip_id)
+    )
+  `);
+}
+
+async function getAccessIpGrantIds(adminId) {
+  const id = parseInt(adminId, 10);
+  if (!id) return [];
+  const [rows] = await pool.execute(
+    `SELECT access_allowed_ip_id FROM admin_access_ip_grants WHERE admin_id = ? ORDER BY access_allowed_ip_id`,
+    [id]
+  );
+  return rows.map((r) => Number(r.access_allowed_ip_id));
+}
+
+async function setAccessIpGrantIds(adminId, accessIpIds) {
+  const id = parseInt(adminId, 10);
+  if (!id) return;
+  const ids = [...new Set((accessIpIds || []).map((x) => parseInt(x, 10)).filter((x) => x > 0))];
+  await pool.execute('DELETE FROM admin_access_ip_grants WHERE admin_id = ?', [id]);
+  for (const ipId of ids) {
+    await pool.execute(
+      'INSERT INTO admin_access_ip_grants (admin_id, access_allowed_ip_id) VALUES (?, ?)',
+      [id, ipId]
+    );
+  }
+}
+
+function isIpUpdaterRole(role) {
+  return role === 'ip_updater';
+}
+
+async function adminCanUpdateAccessIp(admin, accessIpId) {
+  if (!admin || !admin.id) return false;
+  if (isStaffRole(admin.role)) return true;
+  if (!isIpUpdaterRole(admin.role)) return false;
+  const grants = await getAccessIpGrantIds(admin.id);
+  return grants.includes(Number(accessIpId));
+}
+
 async function adminCanEditEmployeeName(admin) {
   if (!admin || !admin.id) return false;
   if (admin.role === 'super_admin') return true;
@@ -222,14 +269,23 @@ async function adminCanEditEmployeeName(admin) {
   return !!rows[0].can_edit_employee_names;
 }
 
-function adminPayloadFromRow(row) {
+function adminPayloadFromRow(row, extra = {}) {
   return {
     id: row.id,
     name: row.name,
     email: row.email,
     role: row.role,
     can_edit_employee_names: row.role === 'super_admin' || !!row.can_edit_employee_names,
+    ...extra,
   };
+}
+
+async function adminPayloadWithGrants(row) {
+  const extra = {};
+  if (isIpUpdaterRole(row.role)) {
+    extra.access_ip_grant_ids = await getAccessIpGrantIds(row.id);
+  }
+  return adminPayloadFromRow(row, extra);
 }
 
 function normalizeWorksForStation(value) {
@@ -857,6 +913,15 @@ async function fullAdminOnly(req, res, next) {
   });
 }
 
+/** Staff or IP updater (office IP list only). */
+async function accessControlAuth(req, res, next) {
+  await auth(req, res, () => {
+    if (isStaffRole(req.admin.role) || isIpUpdaterRole(req.admin.role)) return next();
+    debug('Role check failed (access control required, got ' + req.admin.role + ')');
+    return res.status(403).json({ error: 'Access denied' });
+  });
+}
+
 debug('Authentication initialized (auth / superAdmin / adminOnly / fullAdminOnly)');
 
 // ── Helper: Log action ──
@@ -894,7 +959,7 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign({ id: admin.id, name: admin.name, email: admin.email, role: admin.role }, JWT_SECRET, { expiresIn: '24h' });
     await logAction(admin.id, 'login', 'admin', admin.id, null, null);
     debug('Login successful (admin id=' + admin.id + ' role=' + admin.role + ')');
-    res.json({ success: true, token, admin: adminPayloadFromRow(admin) });
+    res.json({ success: true, token, admin: await adminPayloadWithGrants(admin) });
   } catch (e) {
     debug('Login route failed', e);
     res.status(500).json({ error: e.message, code: e.code || null });
@@ -1904,7 +1969,15 @@ app.get('/api/admins', superAdmin, async (req, res) => {
     const [rows] = await pool.execute(
       'SELECT id, name, email, role, is_active, can_edit_employee_names, created_at, updated_at FROM admins ORDER BY id'
     );
-    res.json(rows);
+    const out = [];
+    for (const row of rows) {
+      const item = { ...row };
+      if (isIpUpdaterRole(row.role)) {
+        item.access_ip_grant_ids = await getAccessIpGrantIds(row.id);
+      }
+      out.push(item);
+    }
+    res.json(out);
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
@@ -1944,12 +2017,15 @@ app.post('/api/admins', superAdmin, async (req, res) => {
     // New accounts are always admin (not super_admin)
     let role = String(req.body.role || 'admin');
     if (role === 'super_admin') role = 'admin';
-    if (!['admin', 'viewer', 'manager'].includes(role)) role = 'admin';
+    if (!['admin', 'viewer', 'manager', 'ip_updater'].includes(role)) role = 'admin';
     if (String(email).trim().toLowerCase() === PRIMARY_SUPER_ADMIN_EMAIL) {
       return res.status(400).json({ error: 'This email is reserved for the primary super admin' });
     }
     const hash = CryptoJS.SHA256(password).toString();
     const [r] = await pool.execute('INSERT INTO admins (name, email, password_hash, role) VALUES (?, ?, ?, ?)', [name, email, hash, role]);
+    if (isIpUpdaterRole(role)) {
+      await setAccessIpGrantIds(r.insertId, req.body.access_ip_ids || req.body.accessIpIds);
+    }
     await logAction(req.admin.id, 'create_admin', 'admin', r.insertId, null, { name, email, role });
     res.json({ success: true, id: r.insertId });
   } catch (e) {
@@ -1993,7 +2069,7 @@ app.put('/api/admins/:id', superAdmin, async (req, res) => {
       if (role) {
         // Do not promote others to super_admin
         const safeRole = role === 'super_admin' ? 'admin' : role;
-        const allowed = ['admin', 'viewer', 'manager'];
+        const allowed = ['admin', 'viewer', 'manager', 'ip_updater'];
         sql += ' role = ?,';
         params.push(allowed.includes(safeRole) ? safeRole : 'admin');
       }
@@ -2005,6 +2081,16 @@ app.put('/api/admins/:id', superAdmin, async (req, res) => {
     sql = sql.slice(0, -1) + ' WHERE id = ?';
     params.push(parseInt(req.params.id));
     await pool.execute(sql, params);
+    const updatedRole = role
+      ? (['admin', 'viewer', 'manager', 'ip_updater'].includes(role === 'super_admin' ? 'admin' : role)
+        ? (role === 'super_admin' ? 'admin' : role)
+        : old.role)
+      : old.role;
+    if (!isIpUpdaterRole(updatedRole)) {
+      await pool.execute('DELETE FROM admin_access_ip_grants WHERE admin_id = ?', [parseInt(req.params.id)]);
+    } else if (req.body.access_ip_ids !== undefined || req.body.accessIpIds !== undefined) {
+      await setAccessIpGrantIds(parseInt(req.params.id), req.body.access_ip_ids || req.body.accessIpIds);
+    }
     await logAction(req.admin.id, 'update_admin', 'admin', parseInt(req.params.id), old, req.body);
     res.json({ success: true });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
@@ -2749,13 +2835,31 @@ async function enrichAccessEntries(rows) {
   return out;
 }
 
-app.get('/api/access/ips', adminOnly, async (req, res) => {
+app.get('/api/access/ips', accessControlAuth, async (req, res) => {
   try {
-    const [rows] = await pool.execute(
-      `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at
-       FROM access_allowed_ips ORDER BY id DESC`
-    );
-    res.json({ ips: await enrichAccessEntries(rows), clientIp: await resolveClientIp(req) });
+    let rows;
+    if (isIpUpdaterRole(req.admin.role)) {
+      const grantIds = await getAccessIpGrantIds(req.admin.id);
+      if (!grantIds.length) {
+        return res.json({ ips: [], clientIp: await resolveClientIp(req), ip_updater: true });
+      }
+      const placeholders = grantIds.map(() => '?').join(',');
+      [rows] = await pool.execute(
+        `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at
+         FROM access_allowed_ips WHERE id IN (${placeholders}) ORDER BY label ASC, id ASC`,
+        grantIds
+      );
+    } else {
+      [rows] = await pool.execute(
+        `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at
+         FROM access_allowed_ips ORDER BY id DESC`
+      );
+    }
+    res.json({
+      ips: await enrichAccessEntries(rows),
+      clientIp: await resolveClientIp(req),
+      ip_updater: isIpUpdaterRole(req.admin.role),
+    });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
@@ -2786,11 +2890,41 @@ app.post('/api/access/ips', adminOnly, async (req, res) => {
   }
 });
 
-app.put('/api/access/ips/:id', adminOnly, async (req, res) => {
+app.put('/api/access/ips/:id', accessControlAuth, async (req, res) => {
   try {
     const [existing] = await pool.execute('SELECT * FROM access_allowed_ips WHERE id = ?', [req.params.id]);
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
     const old = existing[0];
+    if (isIpUpdaterRole(req.admin.role)) {
+      if (!(await adminCanUpdateAccessIp(req.admin, req.params.id))) {
+        return res.status(403).json({ error: 'You are not allowed to update this entry' });
+      }
+      if (old.entry_type !== 'ip') {
+        return res.status(400).json({ error: 'Only static IP entries can be updated by IP updater accounts' });
+      }
+      const ipAddress = normalizeIp(req.body.ip_address || req.body.ip);
+      if (!isValidIp(ipAddress)) {
+        return res.status(400).json({ error: 'Valid IPv4 or IPv6 address required' });
+      }
+      await pool.execute(
+        'UPDATE access_allowed_ips SET ip_address = ? WHERE id = ?',
+        [ipAddress, req.params.id]
+      );
+      await logAction(req.admin.id, 'update', 'access_ip', parseInt(req.params.id), old, {
+        entry_type: old.entry_type,
+        ip: ipAddress,
+        host_name: old.host_name,
+        label: old.label,
+        is_active: old.is_active,
+        ip_updater: true,
+      });
+      const [rows] = await pool.execute(
+        `SELECT id, entry_type, ip_address, host_name, label, is_active, created_at FROM access_allowed_ips WHERE id = ?`,
+        [req.params.id]
+      );
+      const [entry] = await enrichAccessEntries(rows);
+      return res.json({ success: true, ip: entry });
+    }
     const parsed = normalizeAccessEntryBody(req.body, old);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const { entryType, ipAddress, hostName, label, isActive } = parsed;
@@ -2917,7 +3051,34 @@ app.get('/api/verify', auth, async (req, res) => {
       [req.admin.id]
     );
     if (!rows.length) return res.status(401).json({ error: 'Invalid token' });
-    res.json({ valid: true, admin: adminPayloadFromRow(rows[0]) });
+    res.json({ valid: true, admin: await adminPayloadWithGrants(rows[0]) });
+  } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/admins/:id/access-ip-grants', superAdmin, async (req, res) => {
+  try {
+    const adminId = parseInt(req.params.id, 10);
+    const [rows] = await pool.execute('SELECT id, role FROM admins WHERE id = ?', [adminId]);
+    if (!rows.length) return res.status(404).json({ error: 'Not found' });
+    if (!isIpUpdaterRole(rows[0].role)) {
+      return res.status(400).json({ error: 'Admin is not an IP updater' });
+    }
+    const ids = Array.isArray(req.body.accessIpIds || req.body.access_ip_ids)
+      ? (req.body.accessIpIds || req.body.access_ip_ids)
+      : [];
+    if (ids.length) {
+      const placeholders = ids.map(() => '?').join(',');
+      const [found] = await pool.execute(
+        `SELECT id FROM access_allowed_ips WHERE id IN (${placeholders})`,
+        ids.map((x) => parseInt(x, 10)).filter((x) => x > 0)
+      );
+      if (found.length !== ids.length) {
+        return res.status(400).json({ error: 'One or more office IP entries are invalid' });
+      }
+    }
+    await setAccessIpGrantIds(adminId, ids);
+    await logAction(req.admin.id, 'update_ip_updater_grants', 'admin', adminId, null, { accessIpIds: ids });
+    res.json({ success: true, access_ip_grant_ids: await getAccessIpGrantIds(adminId) });
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
@@ -3028,6 +3189,13 @@ async function bootSchema() {
     debug('bootSchema: admins.can_edit_employee_names column ready');
   } catch (e) {
     debug('bootSchema: failed to ensure admins.can_edit_employee_names column', e);
+  }
+  try {
+    debug('bootSchema: ensuring admin_access_ip_grants table...');
+    await ensureAccessIpGrantsTable();
+    debug('bootSchema: admin_access_ip_grants table ready');
+  } catch (e) {
+    debug('bootSchema: failed to ensure admin_access_ip_grants table', e);
   }
   debug('bootSchema: completed');
 }

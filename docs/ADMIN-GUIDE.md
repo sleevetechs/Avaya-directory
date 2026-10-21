@@ -118,6 +118,16 @@ Country (e.g. UAE)
 - **Add this IP** to whitelist
 - Supports **DynDNS hostnames** for offices with changing IPs (re-resolved every 5 minutes)
 
+### IP updater role (e.g. Jeddah daily IP)
+
+For offices where the **public IP changes every day** and a local person updates it:
+
+1. **Super Admin** creates static **IP** entries (not DynDNS) in Access control — e.g. labels **Jeddah**, **COL Jeddah**, with any placeholder IP.
+2. **Super Admin → Admins** → role **IP updater** → check which entries that user may edit.
+3. The user logs in and sees **only** those rows → **Edit** → paste today’s IP (or use **Refresh IP** then save).
+
+They **cannot** add entries, delete, or change passcodes.
+
 When office IPs exist, directory is **office-network only** (outsiders cannot use passcode unless configured on server).
 
 ### Passcodes

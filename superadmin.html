@@ -181,11 +181,17 @@
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-600 mb-1.5">Role</label>
-          <select id="adminRole" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
+          <select id="adminRole" onchange="onAdminRoleChange()" class="input-focus w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none cursor-pointer bg-white">
             <option value="viewer">Viewer (directory only)</option>
             <option value="manager">Manager (employees, recent, access)</option>
+            <option value="ip_updater">IP updater (assigned office IPs only)</option>
             <option value="admin">Admin (full panel)</option>
           </select>
+        </div>
+        <div id="ipUpdaterGrantsSection" class="hidden">
+          <label class="block text-xs font-semibold text-slate-600 mb-1.5">Office IP entries this user can update</label>
+          <p class="text-[11px] text-slate-400 mb-2">Super admin must create IP entries first (e.g. Jeddah, COL Jeddah). This user can only change the IP address, not add or delete.</p>
+          <div id="ipUpdaterGrantList" class="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-3 space-y-2 bg-slate-50/50 text-sm"></div>
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-600 mb-1.5">Active</label>
@@ -275,7 +281,7 @@ async function loadAdmins() {
       tr.innerHTML = `
         <td class="px-4 py-3.5 font-semibold text-slate-800">${a.name}${isPrimary ? ' <span class="text-[10px] font-bold text-brand-600 uppercase ml-1">Primary</span>' : ''}</td>
         <td class="px-4 py-3.5 text-slate-600">${a.email}</td>
-        <td class="px-4 py-3.5"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${a.role === 'super_admin' ? 'bg-brand-100 text-brand-700' : a.role === 'viewer' ? 'bg-slate-100 text-slate-700' : a.role === 'manager' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-700'}">${a.role}</span></td>
+        <td class="px-4 py-3.5"><span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${a.role === 'super_admin' ? 'bg-brand-100 text-brand-700' : a.role === 'viewer' ? 'bg-slate-100 text-slate-700' : a.role === 'manager' ? 'bg-amber-100 text-amber-800' : a.role === 'ip_updater' ? 'bg-violet-100 text-violet-800' : 'bg-blue-100 text-blue-700'}">${a.role === 'ip_updater' ? 'IP updater' : a.role}</span></td>
         <td class="px-4 py-3.5"><span class="inline-flex items-center gap-1.5 text-xs font-medium ${a.is_active ? 'text-green-700' : 'text-red-700'}"><span class="w-1.5 h-1.5 rounded-full ${a.is_active ? 'bg-green-500' : 'bg-red-500'}"></span>${a.is_active ? 'Active' : 'Inactive'}</span></td>
         <td class="px-4 py-3.5 text-xs text-slate-400">${formatDate(a.created_at)}</td>
         <td class="px-4 py-3.5">
@@ -353,22 +359,76 @@ async function saveNameEditors() {
   }
 }
 
-function openAddAdminModal() {
+let accessIpCatalog = [];
+
+async function loadAccessIpCatalog() {
+  if (accessIpCatalog.length) return accessIpCatalog;
+  try {
+    const res = await fetch('/api/access/ips', { headers: { 'Authorization': 'Bearer ' + getToken() } });
+    if (!res.ok) return [];
+    const data = await res.json();
+    accessIpCatalog = Array.isArray(data.ips) ? data.ips : [];
+    return accessIpCatalog;
+  } catch {
+    return [];
+  }
+}
+
+function renderIpUpdaterGrantCheckboxes(selectedIds) {
+  const wrap = document.getElementById('ipUpdaterGrantList');
+  if (!wrap) return;
+  const selected = new Set((selectedIds || []).map(Number));
+  wrap.innerHTML = '';
+  const ipEntries = accessIpCatalog.filter((r) => r.entry_type === 'ip');
+  if (!ipEntries.length) {
+    wrap.innerHTML = '<p class="text-xs text-slate-500">No static IP entries yet. Create them in Admin → Access control (type IP, labels e.g. Jeddah).</p>';
+    return;
+  }
+  ipEntries.forEach((row) => {
+    const id = 'ipGrant_' + row.id;
+    const label = row.label || row.ip_address || ('Entry #' + row.id);
+    wrap.insertAdjacentHTML('beforeend', `
+      <label class="flex items-start gap-2 cursor-pointer">
+        <input type="checkbox" class="ip-updater-grant rounded border-slate-300 text-brand-600 focus:ring-brand-500 mt-0.5" value="${row.id}" id="${id}" ${selected.has(Number(row.id)) ? 'checked' : ''} />
+        <span><span class="font-medium text-slate-800">${escapeHtml(label)}</span>
+        <span class="block text-xs font-mono text-slate-500">${escapeHtml(row.ip_address || '—')}</span></span>
+      </label>`);
+  });
+}
+
+function getSelectedIpUpdaterGrantIds() {
+  return [...document.querySelectorAll('.ip-updater-grant:checked')].map((el) => parseInt(el.value, 10)).filter((id) => id > 0);
+}
+
+function onAdminRoleChange() {
+  const isIpUpdater = document.getElementById('adminRole').value === 'ip_updater';
+  document.getElementById('ipUpdaterGrantsSection').classList.toggle('hidden', !isIpUpdater);
+}
+
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function openAddAdminModal() {
   document.getElementById('adminModalTitle').textContent = 'Add Admin';
   document.getElementById('adminId').value = '';
   document.getElementById('adminForm').reset();
   document.getElementById('adminPassword').required = true;
   document.getElementById('pwdLabel').textContent = '*';
   document.getElementById('adminError').classList.add('hidden');
+  await loadAccessIpCatalog();
+  renderIpUpdaterGrantCheckboxes([]);
+  onAdminRoleChange();
   document.getElementById('adminModal').classList.remove('hidden');
 }
 
-function openEditAdminModal(id) {
+async function openEditAdminModal(id) {
   document.getElementById('adminModalTitle').textContent = 'Edit Admin';
   document.getElementById('adminId').value = id;
   document.getElementById('adminPassword').required = false;
   document.getElementById('pwdLabel').textContent = '(leave blank to keep)';
   document.getElementById('adminError').classList.add('hidden');
+  await loadAccessIpCatalog();
   fetch('/api/admins', { headers: { 'Authorization': 'Bearer ' + getToken() } })
     .then(r => r.json())
     .then(data => {
@@ -379,6 +439,8 @@ function openEditAdminModal(id) {
       document.getElementById('adminEmail').value = a.email;
       document.getElementById('adminRole').value = a.role === 'viewer' ? 'viewer' : (a.role === 'super_admin' ? 'admin' : a.role);
       document.getElementById('adminActive').value = a.is_active;
+      renderIpUpdaterGrantCheckboxes(a.access_ip_grant_ids || []);
+      onAdminRoleChange();
       document.getElementById('adminEmail').disabled = isPrimary;
       document.getElementById('adminRole').disabled = isPrimary;
       document.getElementById('adminActive').disabled = isPrimary;
@@ -418,6 +480,13 @@ async function handleAdminSubmit(e) {
   const pwd = document.getElementById('adminPassword').value;
   if (pwd) body.password = pwd;
   if (!id && !pwd) { showToast('Password is required', '#dc2626'); return; }
+  if (body.role === 'ip_updater') {
+    body.access_ip_ids = getSelectedIpUpdaterGrantIds();
+    if (!body.access_ip_ids.length) {
+      showToast('Select at least one office IP entry for IP updater', '#dc2626');
+      return;
+    }
+  }
 
   const errEl = document.getElementById('adminError');
   errEl.classList.add('hidden');

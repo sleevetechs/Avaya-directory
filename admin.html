@@ -78,7 +78,7 @@
 
 <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
 
-  <div class="flex gap-2 mb-6 p-1 bg-white rounded-2xl shadow-sm border border-slate-200/80 inline-flex flex-wrap">
+  <div id="adminTabBar" class="flex gap-2 mb-6 p-1 bg-white rounded-2xl shadow-sm border border-slate-200/80 inline-flex flex-wrap">
     <button id="tabEmployees" onclick="showAdminTab('employees')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl bg-brand-600 text-white cursor-pointer">Employees</button>
     <button id="tabRecent" onclick="showAdminTab('recent')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Recent Data</button>
     <button id="tabDepartments" onclick="showAdminTab('departments')" class="tab-btn px-5 py-2.5 text-sm font-semibold rounded-xl text-slate-500 hover:text-slate-700 cursor-pointer">Departments</button>
@@ -297,10 +297,10 @@
   <div id="panelAccess" class="hidden">
     <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 sm:p-5 mb-6">
       <h2 class="text-lg font-bold text-slate-800">Public directory access</h2>
-      <p class="text-xs text-slate-400 mt-0.5">Whitelist uses the browser ISP IP (same as shown on the directory gate). Add office public IPs or DynDNS hostnames below.</p>
-      <p class="text-sm text-slate-600 mt-3">Browser ISP IP: <span id="accessClientIp" class="font-mono font-semibold text-brand-700">…</span>
-        <button type="button" onclick="refreshCurrentIp()" class="ml-2 text-xs font-semibold text-brand-600 hover:underline cursor-pointer">Refresh IP</button>
-        <button type="button" onclick="addCurrentIp()" class="ml-2 text-xs font-semibold text-brand-600 hover:underline cursor-pointer">Add this IP</button>
+      <p id="accessPanelIntro" class="text-xs text-slate-400 mt-0.5">Whitelist uses the browser ISP IP (same as shown on the directory gate). Add office public IPs or DynDNS hostnames below.</p>
+      <p id="accessClientIpRow" class="text-sm text-slate-600 mt-3">Browser ISP IP: <span id="accessClientIp" class="font-mono font-semibold text-brand-700">…</span>
+        <button type="button" id="accessRefreshIpBtn" onclick="refreshCurrentIp()" class="ml-2 text-xs font-semibold text-brand-600 hover:underline cursor-pointer">Refresh IP</button>
+        <button type="button" id="accessAddCurrentIpBtn" onclick="addCurrentIp()" class="ml-2 text-xs font-semibold text-brand-600 hover:underline cursor-pointer">Add this IP</button>
       </p>
     </div>
 
@@ -311,7 +311,7 @@
             <h3 class="font-bold text-slate-800">Allowed office IPs &amp; hosts</h3>
             <p class="text-xs text-slate-400 mt-0.5">Static IPs or DynDNS hostnames for office networks</p>
           </div>
-          <button type="button" onclick="openIpModal()" class="px-3 py-2 text-xs bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer">Add entry</button>
+          <button type="button" id="accessAddEntryBtn" onclick="openIpModal()" class="px-3 py-2 text-xs bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-xl cursor-pointer">Add entry</button>
         </div>
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -331,7 +331,7 @@
         <div id="accessIpEmpty" class="hidden text-center py-10 text-slate-400 text-sm">No office IPs or hostnames yet</div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+      <div id="accessPasscodesPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
         <div class="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between gap-3">
           <div>
             <h3 class="font-bold text-slate-800">Passcodes</h3>
@@ -356,7 +356,7 @@
       </div>
     </div>
 
-    <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden mt-6">
+    <div id="accessLogsPanel" class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden mt-6">
       <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-wrap gap-3 items-center justify-between">
         <div>
           <h3 class="font-bold text-slate-800">User access logs</h3>
@@ -865,10 +865,36 @@ let employees = [];
 let adminUser = null;
 
 const MANAGER_TABS = new Set(['employees', 'recent', 'access']);
-const STAFF_PANEL_ROLES = new Set(['admin', 'super_admin', 'manager']);
+const STAFF_PANEL_ROLES = new Set(['admin', 'super_admin', 'manager', 'ip_updater']);
 
 function isManagerRole() {
   return adminUser && adminUser.role === 'manager';
+}
+
+function isIpUpdaterRole() {
+  return adminUser && adminUser.role === 'ip_updater';
+}
+
+function applyIpUpdaterUi() {
+  if (!isIpUpdaterRole()) return;
+  const tabBar = document.getElementById('adminTabBar');
+  if (tabBar) tabBar.classList.add('hidden');
+  ['panelEmployees', 'panelRecent', 'panelDepartments', 'panelBranches', 'panelStations'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+  document.getElementById('panelAccess')?.classList.remove('hidden');
+  document.getElementById('accessPasscodesPanel')?.classList.add('hidden');
+  document.getElementById('accessLogsPanel')?.classList.add('hidden');
+  document.getElementById('accessAddEntryBtn')?.classList.add('hidden');
+  document.getElementById('accessAddCurrentIpBtn')?.classList.add('hidden');
+  const intro = document.getElementById('accessPanelIntro');
+  if (intro) {
+    intro.textContent = 'Update today’s office public IP for your assigned locations. You cannot add or remove entries.';
+  }
+  const h2 = document.querySelector('#panelAccess > .bg-white.rounded-2xl h2');
+  if (h2) h2.textContent = 'Office IP updates';
+  document.getElementById('empCount')?.classList.add('hidden');
 }
 
 function canEditEmployeeName() {
@@ -891,6 +917,7 @@ function applyEmployeeNameFieldLock(isEdit) {
 function roleDisplayLabel(role) {
   if (role === 'super_admin') return 'Super Admin';
   if (role === 'manager') return 'Manager';
+  if (role === 'ip_updater') return 'IP Updater';
   if (role === 'admin') return 'Admin';
   if (role === 'viewer') return 'Viewer';
   return role || '';
@@ -1014,6 +1041,7 @@ function formatDateTime(d) {
 }
 
 function showAdminTab(tab) {
+  if (isIpUpdaterRole()) tab = 'access';
   if (isManagerRole() && !MANAGER_TABS.has(tab)) tab = 'employees';
   document.getElementById('panelEmployees').classList.toggle('hidden', tab !== 'employees');
   document.getElementById('panelRecent').classList.toggle('hidden', tab !== 'recent');
@@ -1034,7 +1062,10 @@ function showAdminTab(tab) {
   if (tab === 'departments') loadDepartments();
   if (tab === 'branches') loadBranchesLocations();
   if (tab === 'stations') loadStations();
-  if (tab === 'access') { loadAccessControl(); loadAccessLogs(); }
+  if (tab === 'access') {
+    loadAccessControl();
+    if (!isIpUpdaterRole()) loadAccessLogs();
+  }
 }
 
 async function loadRecent() {
@@ -1870,20 +1901,20 @@ async function loadAccessControl() {
     const freshIp = await detectBrowserPublicIp(true);
     const auth = { 'Authorization': 'Bearer ' + getToken() };
     if (freshIp) auth['X-Client-Public-Ip'] = freshIp;
-    const [ipRes, pcRes] = await Promise.all([
-      fetch('/api/access/ips', { headers: auth }),
-      fetch('/api/access/passcodes', { headers: auth }),
-    ]);
-    if (ipRes.status === 401 || pcRes.status === 401) { logout(); return; }
+    const ipRes = await fetch('/api/access/ips', { headers: auth });
+    if (ipRes.status === 401) { logout(); return; }
     const ipData = await ipRes.json();
     accessIpRows = Array.isArray(ipData.ips) ? ipData.ips : [];
-    // Prefer freshly detected browser IP so stale cache never sticks
     accessClientIp = freshIp || ipData.clientIp || '';
-    accessPasscodeRows = await pcRes.json();
-    if (!Array.isArray(accessPasscodeRows)) accessPasscodeRows = [];
     document.getElementById('accessClientIp').textContent = accessClientIp || 'unknown';
     renderAccessIps();
-    renderAccessPasscodes();
+    if (!isIpUpdaterRole()) {
+      const pcRes = await fetch('/api/access/passcodes', { headers: auth });
+      if (pcRes.status === 401) { logout(); return; }
+      accessPasscodeRows = await pcRes.json();
+      if (!Array.isArray(accessPasscodeRows)) accessPasscodeRows = [];
+      renderAccessPasscodes();
+    }
   } catch { showToast('Failed to load access settings', '#dc2626'); }
 }
 
@@ -1950,9 +1981,9 @@ function renderAccessIps() {
         <button type="button" onclick="openIpModal(${row.id})" class="p-2 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-xl cursor-pointer" title="Edit">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         </button>
-        <button type="button" onclick="deleteAccessIp(${row.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl cursor-pointer" title="Delete">
+        ${isIpUpdaterRole() ? '' : `<button type="button" onclick="deleteAccessIp(${row.id})" class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl cursor-pointer" title="Delete">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-        </button>
+        </button>`}
       </td>`;
     tbody.appendChild(tr);
   });
@@ -1990,6 +2021,7 @@ function onIpEntryTypeChange() {
 }
 
 function openIpModal(id) {
+  if (isIpUpdaterRole() && !id) return;
   document.getElementById('ipError').classList.add('hidden');
   document.getElementById('ipForm').reset();
   document.getElementById('ipId').value = '';
@@ -1997,10 +2029,22 @@ function openIpModal(id) {
   document.getElementById('ipEntryType').value = 'ip';
   onIpEntryTypeChange();
   document.getElementById('ipModalTitle').textContent = 'Add office access';
+  const typeEl = document.getElementById('ipEntryType');
+  const labelWrap = document.getElementById('ipLabel')?.closest('div');
+  const activeWrap = document.getElementById('ipActive')?.closest('div');
+  if (typeEl) typeEl.disabled = false;
+  if (labelWrap) labelWrap.classList.remove('hidden');
+  if (activeWrap) activeWrap.classList.remove('hidden');
   if (id) {
     const row = accessIpRows.find(x => x.id === id);
     if (!row) return;
-    document.getElementById('ipModalTitle').textContent = 'Edit office access';
+    if (isIpUpdaterRole() && row.entry_type !== 'ip') {
+      showToast('This entry cannot be updated from your account', '#dc2626');
+      return;
+    }
+    document.getElementById('ipModalTitle').textContent = isIpUpdaterRole()
+      ? ('Update IP — ' + (row.label || row.ip_address || 'Office'))
+      : 'Edit office access';
     document.getElementById('ipId').value = row.id;
     document.getElementById('ipEntryType').value = row.entry_type === 'host' ? 'host' : 'ip';
     onIpEntryTypeChange();
@@ -2008,6 +2052,12 @@ function openIpModal(id) {
     document.getElementById('ipHostName').value = row.host_name || '';
     document.getElementById('ipLabel').value = row.label || '';
     document.getElementById('ipActive').checked = !!row.is_active;
+    if (isIpUpdaterRole()) {
+      if (typeEl) typeEl.disabled = true;
+      document.getElementById('ipHostWrap')?.classList.add('hidden');
+      if (labelWrap) labelWrap.classList.add('hidden');
+      if (activeWrap) activeWrap.classList.add('hidden');
+    }
   }
   document.getElementById('ipModal').classList.remove('hidden');
 }
@@ -2026,14 +2076,17 @@ function addCurrentIp() {
 async function handleIpSubmit(e) {
   e.preventDefault();
   const id = document.getElementById('ipId').value;
+  if (isIpUpdaterRole() && !id) return;
   const entryType = document.getElementById('ipEntryType').value;
-  const body = {
-    entry_type: entryType,
-    ip_address: document.getElementById('ipAddress').value.trim(),
-    host_name: document.getElementById('ipHostName').value.trim(),
-    label: document.getElementById('ipLabel').value.trim(),
-    is_active: document.getElementById('ipActive').checked ? 1 : 0,
-  };
+  const body = isIpUpdaterRole()
+    ? { ip_address: document.getElementById('ipAddress').value.trim() }
+    : {
+      entry_type: entryType,
+      ip_address: document.getElementById('ipAddress').value.trim(),
+      host_name: document.getElementById('ipHostName').value.trim(),
+      label: document.getElementById('ipLabel').value.trim(),
+      is_active: document.getElementById('ipActive').checked ? 1 : 0,
+    };
   const errEl = document.getElementById('ipError');
   errEl.classList.add('hidden');
   try {
@@ -2049,7 +2102,7 @@ async function handleIpSubmit(e) {
       return;
     }
     closeIpModal();
-    showToast(id ? 'Access entry updated' : 'Access entry added', '#059669');
+    showToast(isIpUpdaterRole() ? 'Office IP updated' : (id ? 'Access entry updated' : 'Access entry added'), '#059669');
     await loadAccessControl();
   } catch {
     errEl.textContent = 'Network error';
@@ -3162,7 +3215,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (adminUser.role === 'viewer') { window.location.href = '/'; return; }
   if (!STAFF_PANEL_ROLES.has(adminUser.role)) { window.location.href = '/'; return; }
   applyManagerRoleUi();
+  applyIpUpdaterUi();
   document.getElementById('adminInfo').textContent = adminUser.name + ' (' + roleDisplayLabel(adminUser.role) + ')';
+  if (isIpUpdaterRole()) {
+    showAdminTab('access');
+    await loadAccessControl();
+    return;
+  }
   document.getElementById('searchInput').addEventListener('input', () => {
     clearTimeout(loadEmployees._searchTimer);
     loadEmployees._searchTimer = setTimeout(loadEmployees, 200);
