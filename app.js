@@ -239,6 +239,7 @@ function applyDirectoryData(employees, tree, source) {
   DIRECTORY_TREE = Array.isArray(tree) ? tree : [];
   directoryDataSource = source || 'live';
   countryColorIndex.clear();
+  invalidateWorksForLabelsCache();
   filtered = [...EMPLOYEES];
   ensureDirectoryUiBound();
   populateFilters();
@@ -760,30 +761,81 @@ function stationTypeLabel(t) {
   return 'Tel';
 }
 
-/** Names that count as “working for” a country (country + site/location names under it). */
+function normPlaceName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function addWorksForLabel(labels, raw) {
+  const s = String(raw || '').trim();
+  if (!s || s === 'Main' || /^none$/i.test(s) || s === '—') return;
+  labels.add(s);
+}
+
+let worksForLabelsCacheKey = '';
+let worksForLabelsCache = null;
+
+/** Names that count as “working for” a country (country, states, sites, cities, station names). */
 function worksForLabelsForCountry(countryName) {
-  const labels = new Set();
   const country = String(countryName || '').trim();
-  if (!country) return labels;
-  labels.add(country);
+  if (!country) return new Set();
+  if (worksForLabelsCacheKey === country && worksForLabelsCache) return worksForLabelsCache;
+
+  const labels = new Set();
+  const countryNorm = normPlaceName(country);
+  addWorksForLabel(labels, country);
+
   for (const state of statesForCountry(country)) {
+    addWorksForLabel(labels, state.name);
     for (const loc of locationsForState(state)) {
-      const n = String(loc.name || '').trim();
-      if (n && n !== 'Main') labels.add(n);
+      addWorksForLabel(labels, loc.name);
+      addWorksForLabel(labels, loc.city);
+      for (const p of loc.phones || []) {
+        addWorksForLabel(labels, p.station_name);
+        addWorksForLabel(labels, p.branch);
+      }
     }
   }
+
+  const localNorm = new Set();
+  for (const emp of EMPLOYEES) {
+    if (normPlaceName(emp.branch) !== countryNorm) continue;
+    for (const field of [emp.station_name, emp.location_name, emp.location_city, emp.state_name]) {
+      addWorksForLabel(labels, field);
+      const n = normPlaceName(field);
+      if (n) localNorm.add(n);
+    }
+  }
+
+  for (const label of labels) {
+    const n = normPlaceName(label);
+    if (n) localNorm.add(n);
+  }
+  for (const emp of EMPLOYEES) {
+    const wf = String(emp.works_for_station || '').trim();
+    if (!wf) continue;
+    if (localNorm.has(normPlaceName(wf))) addWorksForLabel(labels, wf);
+  }
+
+  worksForLabelsCacheKey = country;
+  worksForLabelsCache = labels;
   return labels;
 }
 
-function employeeMatchesCountryFilter(emp, countryName) {
+function invalidateWorksForLabelsCache() {
+  worksForLabelsCacheKey = '';
+  worksForLabelsCache = null;
+}
+
+function employeeMatchesCountryFilter(emp, countryName, labelsForCountry) {
   const country = String(countryName || '').trim();
   if (!country) return true;
-  if (String(emp.branch || '').trim() === country) return true;
+  if (normPlaceName(emp.branch) === normPlaceName(country)) return true;
   const wf = String(emp.works_for_station || '').trim();
   if (!wf) return false;
-  const wfLower = wf.toLowerCase();
-  for (const label of worksForLabelsForCountry(country)) {
-    if (label.toLowerCase() === wfLower) return true;
+  const wfLower = normPlaceName(wf);
+  const labels = labelsForCountry || worksForLabelsForCountry(country);
+  for (const label of labels) {
+    if (normPlaceName(label) === wfLower) return true;
   }
   return false;
 }
@@ -1005,9 +1057,10 @@ function applyFilters() {
   const needStates = countryNeedsStatePicker(country);
   const locsInState = state ? locationsForState(state) : [];
   const multiLoc = locsInState.length > 1;
+  const countryWorksForLabels = country ? worksForLabelsForCountry(country) : null;
 
   filtered = EMPLOYEES.filter(e => {
-    const matchCountry = employeeMatchesCountryFilter(e, country);
+    const matchCountry = employeeMatchesCountryFilter(e, country, countryWorksForLabels);
     const matchDept = !dept || e.dept === dept;
     const matchWorksFor = !worksFor || e.works_for_station === worksFor;
     if (!matchCountry || !matchDept || !matchWorksFor) return false;
