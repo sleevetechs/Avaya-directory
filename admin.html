@@ -2030,9 +2030,11 @@ function openIpModal(id) {
   onIpEntryTypeChange();
   document.getElementById('ipModalTitle').textContent = 'Add office access';
   const typeEl = document.getElementById('ipEntryType');
-  const labelWrap = document.getElementById('ipLabel')?.closest('div');
-  const activeWrap = document.getElementById('ipActive')?.closest('div');
+  const typeWrap = typeEl?.closest('.mb-4');
+  const labelWrap = document.getElementById('ipLabel')?.closest('.mb-4');
+  const activeWrap = document.getElementById('ipActive')?.closest('label');
   if (typeEl) typeEl.disabled = false;
+  if (typeWrap) typeWrap.classList.remove('hidden');
   if (labelWrap) labelWrap.classList.remove('hidden');
   if (activeWrap) activeWrap.classList.remove('hidden');
   if (id) {
@@ -2054,6 +2056,7 @@ function openIpModal(id) {
     document.getElementById('ipActive').checked = !!row.is_active;
     if (isIpUpdaterRole()) {
       if (typeEl) typeEl.disabled = true;
+      if (typeWrap) typeWrap.classList.add('hidden');
       document.getElementById('ipHostWrap')?.classList.add('hidden');
       if (labelWrap) labelWrap.classList.add('hidden');
       if (activeWrap) activeWrap.classList.add('hidden');
