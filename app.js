@@ -760,18 +760,48 @@ function stationTypeLabel(t) {
   return 'Tel';
 }
 
+/** Names that count as “working for” a country (country + site/location names under it). */
+function worksForLabelsForCountry(countryName) {
+  const labels = new Set();
+  const country = String(countryName || '').trim();
+  if (!country) return labels;
+  labels.add(country);
+  for (const state of statesForCountry(country)) {
+    for (const loc of locationsForState(state)) {
+      const n = String(loc.name || '').trim();
+      if (n && n !== 'Main') labels.add(n);
+    }
+  }
+  return labels;
+}
+
+function employeeMatchesCountryFilter(emp, countryName) {
+  const country = String(countryName || '').trim();
+  if (!country) return true;
+  if (String(emp.branch || '').trim() === country) return true;
+  const wf = String(emp.works_for_station || '').trim();
+  if (!wf) return false;
+  const wfLower = wf.toLowerCase();
+  for (const label of worksForLabelsForCountry(country)) {
+    if (label.toLowerCase() === wfLower) return true;
+  }
+  return false;
+}
+
 function selectCountry(country) {
-  selectedCountry = country || '';
+  const next = String(country || '').trim();
+  if (next && selectedCountry === next) {
+    selectedCountry = '';
+    selectedStateId = null;
+    selectedLocationId = null;
+    document.getElementById('branchFilter').value = '';
+    applyFilters();
+    return;
+  }
+  selectedCountry = next;
   selectedStateId = null;
   selectedLocationId = null;
   document.getElementById('branchFilter').value = selectedCountry;
-
-  const states = statesForCountry(selectedCountry).filter(s => (s.locations || []).length);
-  if (!countryNeedsStatePicker(selectedCountry) && states.length === 1) {
-    selectedStateId = states[0].id;
-    const locs = locationsForState(states[0]);
-    if (locs.length === 1) selectedLocationId = locs[0].id;
-  }
   applyFilters();
 }
 
@@ -977,7 +1007,7 @@ function applyFilters() {
   const multiLoc = locsInState.length > 1;
 
   filtered = EMPLOYEES.filter(e => {
-    const matchCountry = !country || e.branch === country;
+    const matchCountry = employeeMatchesCountryFilter(e, country);
     const matchDept = !dept || e.dept === dept;
     const matchWorksFor = !worksFor || e.works_for_station === worksFor;
     if (!matchCountry || !matchDept || !matchWorksFor) return false;

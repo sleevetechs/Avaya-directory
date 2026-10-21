@@ -4,6 +4,14 @@ Employee phone directory for **Compass Logistics** — search extensions, mobile
 
 **Live example:** [directory.compasslog.com](https://directory.compasslog.com)
 
+### Documentation (handover & operations)
+
+| Document | Description |
+|----------|-------------|
+| [**docs/DEPLOYMENT-AZURE-WINDOWS.md**](docs/DEPLOYMENT-AZURE-WINDOWS.md) | **Start here for IT** — Azure RDP (`4.247.132.189`), IIS, updates, MySQL, troubleshooting |
+| [**docs/ADMIN-GUIDE.md**](docs/ADMIN-GUIDE.md) | Day-to-day admin panel usage |
+| [**docs/README.md**](docs/README.md) | Documentation index |
+
 ---
 
 ## Features
@@ -21,11 +29,15 @@ Employee phone directory for **Compass Logistics** — search extensions, mobile
 - Manage countries (branches), states, locations, and station numbers
 - Department management with employee counts
 - Soft delete with delete-request workflow
-- Role-based access: **admin**, **viewer** (read-only), **super_admin**
+- Role-based access: **admin**, **manager**, **viewer** (read-only), **super_admin**
 
 ### Super admin (`/superadmin`)
 - Manage admin users
+- Designate up to two **employee name editors**
 - View audit logs
+
+### Manager (`/admin`, limited tabs)
+- Employees, Recent data, Access control only
 
 ---
 
@@ -220,6 +232,7 @@ AFTER station_name;
 |------|--------|
 | **super_admin** | Full admin + manage other admins + audit logs. Primary account: `super-admin@compasslog.com` |
 | **admin** | Create/edit/delete employees, locations, passcodes, etc. |
+| **manager** | Employees, recent changes, and access control only |
 | **viewer** | Read-only in admin panel |
 
 Admin passwords are stored as **SHA-256** hashes. Directory passcodes are also SHA-256 hashed.
@@ -232,11 +245,17 @@ Until at least one **allowed IP** or **active passcode** exists, the public dire
 
 When enabled:
 
-1. **Allowed office IP** → immediate access
+1. **Allowed office IP** (browser ISP public IP) → immediate access
 2. **Valid passcode** → JWT cookie/header with configurable duration (seconds / days / months)
 3. **Logged-in admin** → bypass passcode for API calls with Bearer token
 
 Configure in **Admin → Access control** (IPs and passcodes).
+
+**Production office IP:** `106.51.67.206` (whitelist in admin panel).
+
+IP detection uses the browser’s public IP (with same-origin fallback when Firefox Strict or ad-blockers block external IP services). Port numbers are stripped before matching (`106.x.x.x:443` → `106.x.x.x`).
+
+See [docs/DEPLOYMENT-AZURE-WINDOWS.md](docs/DEPLOYMENT-AZURE-WINDOWS.md) for access troubleshooting.
 
 ---
 
@@ -310,17 +329,16 @@ Upload **contents of `dist/`** to your server app root. Do **not** upload `.env`
 
 > **Note:** Do not put DB passwords in `.htaccess` — `$` characters break Apache env vars.
 
-### Option B — Azure Windows VM + IIS
+### Option B — Azure Windows VM + IIS (production)
 
-Recommended pattern: **IIS reverse proxy → Node Windows Service**
+**Full guide:** [docs/DEPLOYMENT-AZURE-WINDOWS.md](docs/DEPLOYMENT-AZURE-WINDOWS.md)
 
-1. Install Node.js, MySQL, IIS, **URL Rewrite**, **ARR** (enable proxy)
-2. Deploy app to e.g. `C:\apps\compass-directory`
-3. Create `.env` or set env vars on the Windows service
-4. Run Node as a service (NSSM or PM2) on `PORT=3000`
-5. IIS site URL Rewrite: `(.*)` → `http://localhost:3000/{R:1}`
-6. HTTPS via win-acme (Let’s Encrypt) — required for PWA install
-7. Open NSG ports **80** and **443** only; keep MySQL **3306** internal
+Quick reference:
+
+- **RDP:** `4.247.132.189:3389`
+- **App path:** `C:\apps\Avaya-directory`
+- **Pattern:** IIS reverse proxy → Node Windows Service on `PORT=3000`
+- **Update:** `git pull` → restart Node service → verify `/api/health`
 
 ### Option C — Generic Node host
 
@@ -414,6 +432,8 @@ The import template includes (among others):
 | `/api/health` returns 500 HTML | Node not running or wrong app root | Fix Passenger/IIS proxy; check `debug.log` |
 | `Access denied for user 'root'@'localhost'` | Wrong MySQL credentials | Fix `DB_*` in `.env` or host env |
 | Directory shows “Passcode required” | Access control enabled | Enter passcode or add your IP in admin |
+| Office user blocked (Firefox Strict) | Browser blocks IP detection | Standard privacy mode, or deploy latest (same-origin fallback) |
+| IP shows with `:port` at gate | Old build or proxy quirk | Deploy latest; port stripped on match |
 | PWA won’t install on phone | HTTP or LAN IP | Use HTTPS on production domain |
 | Pages load but API 500 on cPanel | Static files in `public_html` only | Deploy full Node app; align Passenger root |
 | `bootSchema` errors in log | DB user lacks ALTER permission | Grant privileges or run manual SQL |
