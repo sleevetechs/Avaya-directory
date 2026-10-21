@@ -8,7 +8,7 @@ Day-to-day guide for staff managing employee data and access on **https://direct
 
 | Role | URL |
 |------|-----|
-| Admin / Manager / Viewer | https://directory.compasslog.com/login → **Dashboard** |
+| Admin / Manager / Viewer / IP updater | https://directory.compasslog.com/login → **Dashboard** |
 | Super Admin | https://directory.compasslog.com/login → **Super Admin** panel |
 
 Use the email and password created for your account. Contact super admin if locked out.
@@ -22,6 +22,7 @@ Use the email and password created for your account. Contact super admin if lock
 | **Super Admin** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Admin** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | **Manager** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| **IP updater** | ❌ | ❌ | ❌ | ❌ | ❌ | Assigned IPs only (edit IP) | ❌ |
 | **Viewer** | View only | View only | View only | View only | View only | View only | ❌ |
 
 ---
@@ -144,7 +145,7 @@ When office IPs exist, directory is **office-network only** (outsiders cannot us
 
 ### Manage admins
 
-- Create admin, manager, or viewer accounts
+- Create admin, manager, viewer, or **IP updater** accounts (IP updater: assign which whitelist IP rows they may edit)
 - Reset passwords
 - Deactivate accounts
 
