@@ -1355,6 +1355,78 @@ function closeInstallHelp() {
   if (modal) modal.classList.add('hidden');
 }
 
+function formatReportPrivateIpLabel() {
+  if (browserLocalIp && isLanIpv4(browserLocalIp)) return browserLocalIp;
+  if (browserLocalIp) return browserLocalIp;
+  return 'Not detected — your message will still be sent';
+}
+
+async function openChangeReportModal() {
+  const modal = document.getElementById('changeReportModal');
+  if (!modal) return;
+  document.getElementById('changeReportError')?.classList.add('hidden');
+  document.getElementById('changeReportSuccess')?.classList.add('hidden');
+  const ipEl = document.getElementById('changeReportPrivateIp');
+  if (ipEl) ipEl.textContent = 'Detecting…';
+  modal.classList.remove('hidden');
+  await detectBrowserLocalIp();
+  if (ipEl) ipEl.textContent = formatReportPrivateIpLabel();
+}
+
+function closeChangeReportModal() {
+  document.getElementById('changeReportModal')?.classList.add('hidden');
+}
+
+async function submitChangeReport(e) {
+  e.preventDefault();
+  const errEl = document.getElementById('changeReportError');
+  const okEl = document.getElementById('changeReportSuccess');
+  const btn = document.getElementById('changeReportSubmitBtn');
+  errEl?.classList.add('hidden');
+  okEl?.classList.add('hidden');
+  const message = document.getElementById('changeReportMessage')?.value?.trim() || '';
+  const reporter_name = document.getElementById('changeReportName')?.value?.trim() || '';
+  if (!message) {
+    if (errEl) { errEl.textContent = 'Please describe the change.'; errEl.classList.remove('hidden'); }
+    return;
+  }
+  if (btn) btn.disabled = true;
+  try {
+    await detectBrowserLocalIp();
+    const res = await fetch('/api/directory/reports', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...directoryFetchHeaders() },
+      body: JSON.stringify({
+        message,
+        reporter_name,
+        local_ip: browserLocalIp || '',
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (errEl) {
+        errEl.textContent = data.error || 'Could not send report';
+        errEl.classList.remove('hidden');
+      }
+      return;
+    }
+    if (okEl) {
+      okEl.textContent = 'Thank you — your report was sent to IT.';
+      okEl.classList.remove('hidden');
+    }
+    document.getElementById('changeReportMessage').value = '';
+    document.getElementById('changeReportName').value = '';
+    setTimeout(closeChangeReportModal, 1800);
+  } catch {
+    if (errEl) {
+      errEl.textContent = 'Network error. Try again.';
+      errEl.classList.remove('hidden');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function setupPwaInstallUi() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -1373,6 +1445,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     closeModal();
     closeInstallHelp();
+    closeChangeReportModal();
   }
 });
 document.addEventListener('DOMContentLoaded', () => {

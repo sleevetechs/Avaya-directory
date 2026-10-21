@@ -219,6 +219,25 @@ async function ensureAccessIpGrantsTable() {
   `);
 }
 
+async function ensureDirectoryChangeReportsTable() {
+  await pool.execute(`
+    CREATE TABLE IF NOT EXISTS directory_change_reports (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      message TEXT NOT NULL,
+      reporter_name VARCHAR(120) NOT NULL DEFAULT '',
+      private_ip VARCHAR(64) NOT NULL DEFAULT '',
+      private_ips VARCHAR(255) NOT NULL DEFAULT '',
+      public_ip VARCHAR(64) NOT NULL DEFAULT '',
+      user_agent VARCHAR(500) NOT NULL DEFAULT '',
+      status VARCHAR(20) NOT NULL DEFAULT 'new',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_dcr_created (created_at),
+      INDEX idx_dcr_status (status),
+      INDEX idx_dcr_private_ip (private_ip)
+    )
+  `);
+}
+
 async function getAccessIpGrantIds(adminId) {
   const id = parseInt(adminId, 10);
   if (!id) return [];
@@ -536,6 +555,33 @@ function getReportedLocalIp(req) {
     return connectionIp;
   }
   return '';
+}
+
+function isReportablePrivateIp(ip) {
+  const c = normalizeIp(ip);
+  if (!c || !isValidIp(c) || c === '0.0.0.0') return false;
+  if (!isLoopbackOrPrivateIp(c)) return false;
+  if (c.startsWith('127.') || c === '::1') return false;
+  return true;
+}
+
+function pickPrivateIpForReport(req, body = {}) {
+  let ip = getReportedLocalIp(req);
+  if (!ip && body.local_ip && isReportablePrivateIp(body.local_ip)) {
+    ip = normalizeIp(body.local_ip);
+  }
+  return ip || '';
+}
+
+function pickExtraPrivateIps(req, body, primary) {
+  const set = new Set();
+  const add = (raw) => {
+    const c = normalizeIp(raw);
+    if (c && isReportablePrivateIp(c) && c !== primary) set.add(c);
+  };
+  for (const part of String(req.headers['x-client-local-ips'] || '').split(',')) add(part);
+  if (Array.isArray(body.local_ips)) body.local_ips.forEach(add);
+  return [...set].slice(0, 8).join(', ');
 }
 
 function normalizeIp(ip) {
@@ -2710,6 +2756,101 @@ app.get('/api/access/check', async (req, res) => {
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/directory/reports', async (req, res) => {
+  try {
+    const access = await evaluatePublicAccess(req);
+    if (!access.allowed) {
+      return res.status(403).json({
+        error: access.officeIpOnly
+          ? 'Directory is only available from the office network'
+          : 'Passcode required to use the directory',
+      });
+    }
+    const message = String(req.body?.message || '').trim();
+    if (!message) return res.status(400).json({ error: 'Please describe the change you need' });
+    if (message.length > 8000) return res.status(400).json({ error: 'Message is too long (max 8000 characters)' });
+    const reporterName = String(req.body?.reporter_name || req.body?.name || '').trim().slice(0, 120);
+    const privateIp = pickPrivateIpForReport(req, req.body || {});
+    const privateIps = pickExtraPrivateIps(req, req.body || {}, privateIp);
+    const publicIp = (await resolveClientIp(req)) || access.clientIp || '';
+    const ua = String(req.headers['user-agent'] || '').slice(0, 500);
+
+    if (privateIp) {
+      const [recent] = await pool.execute(
+        `SELECT COUNT(*) AS c FROM directory_change_reports
+         WHERE private_ip = ? AND created_at >= NOW() - INTERVAL 1 HOUR`,
+        [privateIp]
+      );
+      if (Number(recent[0]?.c || 0) >= 8) {
+        return res.status(429).json({ error: 'Too many reports from this device. Please wait a while.' });
+      }
+    }
+
+    const [ins] = await pool.execute(
+      `INSERT INTO directory_change_reports
+        (message, reporter_name, private_ip, private_ips, public_ip, user_agent, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'new')`,
+      [message, reporterName, privateIp, privateIps, publicIp, ua]
+    );
+    res.json({ success: true, id: ins.insertId, private_ip: privateIp || null });
+  } catch (e) {
+    debug('Route failed', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/directory/reports', superAdmin, async (req, res) => {
+  try {
+    const status = String(req.query.status || '').trim();
+    let where = '';
+    const params = [];
+    if (status && ['new', 'read', 'resolved'].includes(status)) {
+      where = ' WHERE status = ?';
+      params.push(status);
+    }
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 500);
+    const [rows] = await pool.execute(
+      `SELECT id, message, reporter_name, private_ip, private_ips, public_ip, user_agent, status, created_at
+       FROM directory_change_reports${where}
+       ORDER BY created_at DESC
+       LIMIT ${limit}`,
+      params
+    );
+    res.json(rows);
+  } catch (e) {
+    debug('Route failed', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.patch('/api/directory/reports/:id', superAdmin, async (req, res) => {
+  try {
+    const status = String(req.body?.status || '').trim();
+    if (!['new', 'read', 'resolved'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const [existing] = await pool.execute('SELECT id FROM directory_change_reports WHERE id = ?', [req.params.id]);
+    if (!existing.length) return res.status(404).json({ error: 'Not found' });
+    await pool.execute('UPDATE directory_change_reports SET status = ? WHERE id = ?', [status, req.params.id]);
+    res.json({ success: true });
+  } catch (e) {
+    debug('Route failed', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/directory/reports/:id', superAdmin, async (req, res) => {
+  try {
+    const [existing] = await pool.execute('SELECT id FROM directory_change_reports WHERE id = ?', [req.params.id]);
+    if (!existing.length) return res.status(404).json({ error: 'Not found' });
+    await pool.execute('DELETE FROM directory_change_reports WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (e) {
+    debug('Route failed', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/access/unlock', async (req, res) => {
   try {
     debug('ENTERED POST /api/access/unlock');
@@ -3196,6 +3337,13 @@ async function bootSchema() {
     debug('bootSchema: admin_access_ip_grants table ready');
   } catch (e) {
     debug('bootSchema: failed to ensure admin_access_ip_grants table', e);
+  }
+  try {
+    debug('bootSchema: ensuring directory_change_reports table...');
+    await ensureDirectoryChangeReportsTable();
+    debug('bootSchema: directory_change_reports table ready');
+  } catch (e) {
+    debug('bootSchema: failed to ensure directory_change_reports table', e);
   }
   debug('bootSchema: completed');
 }
