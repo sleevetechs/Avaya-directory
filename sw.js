@@ -132,7 +132,8 @@ self.addEventListener('fetch', (event) => {
   if (isApiGet(url, request) && (
     url.pathname === '/api/employees' ||
     url.pathname === '/api/directory-tree' ||
-    url.pathname === '/api/access/check'
+    url.pathname === '/api/access/check' ||
+    url.pathname === '/api/lookup'
   )) {
     event.respondWith(
       networkFirst(request, RUNTIME_CACHE).catch(() =>

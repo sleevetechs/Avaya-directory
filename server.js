@@ -784,6 +784,186 @@ function hasValidDirectoryToken(req) {
   }
 }
 
+const lookupRateByKey = new Map();
+
+function lookupRateLimitKey(req) {
+  const token = String(req.headers['x-siri-token'] || req.query.token || '').trim();
+  if (token) return 'token:' + token.slice(0, 16);
+  return 'ip:' + (getClientIp(req) || 'unknown');
+}
+
+function checkLookupRateLimit(req) {
+  const hour = Math.floor(Date.now() / 3600000);
+  const key = lookupRateLimitKey(req) + ':' + hour;
+  const count = (lookupRateByKey.get(key) || 0) + 1;
+  lookupRateByKey.set(key, count);
+  if (lookupRateByKey.size > 5000) {
+    lookupRateByKey.clear();
+  }
+  return count <= 120;
+}
+
+async function evaluateLookupAccess(req) {
+  if (getAdminFromAuthHeader(req)) {
+    return { allowed: true, reason: 'admin' };
+  }
+  const siriSecret = String(process.env.SIRI_LOOKUP_TOKEN || '').trim();
+  if (siriSecret) {
+    const provided = String(req.headers['x-siri-token'] || req.query.token || '').trim();
+    if (provided && provided === siriSecret) {
+      return { allowed: true, reason: 'siri_token' };
+    }
+  }
+  return evaluatePublicAccess(req);
+}
+
+function normalizeLookupQuery(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\u0080-\uFFFF\s,]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function scoreEmployeeNameMatch(empName, query) {
+  const q = normalizeLookupQuery(query);
+  const full = normalizeLookupQuery(empName);
+  if (!q || !full) return 0;
+  const parts = full.split(/[\s,]+/).filter(Boolean);
+  if (full === q) return 100;
+  if (parts.some((p) => p === q)) return 85;
+  if (parts.some((p) => p.startsWith(q))) return 75;
+  if (full.includes(q)) return 55;
+  const qParts = q.split(' ').filter(Boolean);
+  if (qParts.length > 1 && qParts.every((qp) => full.includes(qp))) return 65;
+  return 0;
+}
+
+async function findEmployeesForLookup(nameQuery) {
+  const raw = String(nameQuery || '').trim().slice(0, 80);
+  if (!raw) return [];
+  const tokens = raw.split(/\s+/).filter(Boolean);
+  const terms = tokens.length ? tokens : [raw];
+  const ors = [];
+  const params = [];
+  for (const t of terms) {
+    const safe = t.replace(/[%_\\]/g, '');
+    if (!safe) continue;
+    ors.push('e.name LIKE ?');
+    params.push('%' + safe + '%');
+  }
+  if (!ors.length) return [];
+  const [emps] = await pool.execute(
+    `SELECT e.id, e.name, e.dept, e.branch
+     FROM employees e
+     WHERE e.deleted_at IS NULL AND e.delete_requested_by IS NULL
+       AND (${ors.join(' OR ')})
+     ORDER BY e.name
+     LIMIT 30`,
+    params
+  );
+  const scored = emps
+    .map((e) => ({ ...e, score: scoreEmployeeNameMatch(e.name, raw) }))
+    .filter((e) => e.score > 0)
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  if (!scored.length) return [];
+  const ids = scored.map((e) => e.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const [nums] = await pool.execute(
+    `SELECT * FROM employee_numbers WHERE employee_id IN (${placeholders}) ORDER BY id`,
+    ids
+  );
+  const byEmp = {};
+  for (const n of nums) {
+    if (!byEmp[n.employee_id]) byEmp[n.employee_id] = [];
+    byEmp[n.employee_id].push(n);
+  }
+  return scored.map((e) => ({ ...e, numbers: byEmp[e.id] || [] }));
+}
+
+function primaryExtension(numbers) {
+  for (const n of numbers || []) {
+    const ext = String(n.ext || '').trim();
+    if (ext) return ext;
+  }
+  return '';
+}
+
+function primaryMobile(numbers) {
+  for (const n of numbers || []) {
+    const m = String(n.mobile || '').trim();
+    if (m) return m;
+  }
+  return '';
+}
+
+function firstNameFromEmployee(name, query) {
+  const q = normalizeLookupQuery(query).split(' ')[0];
+  const parts = normalizeLookupQuery(name).split(/[\s,]+/).filter(Boolean);
+  if (q && parts.includes(q)) {
+    return q.charAt(0).toUpperCase() + q.slice(1);
+  }
+  if (parts.length) return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+  return name;
+}
+
+function buildLookupPayload(matches, query) {
+  if (!matches.length) {
+    return {
+      found: false,
+      speak: 'Sorry, no employee matched that name.',
+      extension: '',
+      name: '',
+      matches: [],
+    };
+  }
+  const best = matches[0];
+  const ext = primaryExtension(best.numbers);
+  const mobile = primaryMobile(best.numbers);
+  const tie = matches.length > 1 && matches[1].score >= best.score - 5;
+  if (tie && matches[1].score >= 75) {
+    const names = matches.slice(0, 3).map((m) => m.name).join(', ');
+    return {
+      found: false,
+      ambiguous: true,
+      speak: `Several people match. Try the full name. For example: ${names}.`,
+      extension: '',
+      name: '',
+      matches: matches.slice(0, 5).map((m) => ({
+        id: m.id,
+        name: m.name,
+        extension: primaryExtension(m.numbers),
+      })),
+    };
+  }
+  if (!ext && !mobile) {
+    return {
+      found: true,
+      speak: `${best.name} is listed but has no extension on file.`,
+      extension: '',
+      mobile: '',
+      name: best.name,
+      dept: best.dept || '',
+      branch: best.branch || '',
+      matches: [],
+    };
+  }
+  const short = firstNameFromEmployee(best.name, query);
+  let speak = ext
+    ? `${short}'s extension is ${ext.replace(/\s+/g, ' ')}.`
+    : `${short}'s mobile is ${mobile}.`;
+  return {
+    found: true,
+    speak,
+    extension: ext,
+    mobile,
+    name: best.name,
+    dept: best.dept || '',
+    branch: best.branch || '',
+    matches: [],
+  };
+}
+
 async function evaluatePublicAccess(req) {
   const browserIps = getBrowserPublicIps(req);
   const connectionIps = getConnectionPublicIps(req);
@@ -2804,6 +2984,46 @@ app.get('/api/access/check', async (req, res) => {
     }
     res.json(result);
   } catch (e) { debug('Route failed', e); res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/lookup', async (req, res) => {
+  try {
+    if (!checkLookupRateLimit(req)) {
+      return res.status(429).json({ error: 'Too many lookups. Please wait.', speak: 'Too many requests. Please try again later.' });
+    }
+    const access = await evaluateLookupAccess(req);
+    if (!access.allowed) {
+      const speak = access.officeIpOnly
+        ? 'Directory lookup is only available on the office network or with a passcode token.'
+        : 'Passcode required. Add your directory unlock token to the Siri shortcut.';
+      return res.status(403).json({
+        error: access.officeIpOnly
+          ? 'Directory is only available from the office network'
+          : 'Passcode required to use the directory',
+        speak,
+        requiresPasscode: !access.officeIpOnly,
+        officeIpOnly: !!access.officeIpOnly,
+      });
+    }
+    const name = String(req.query.name || req.query.q || '').trim();
+    if (!name) {
+      return res.status(400).json({
+        error: 'Query parameter name is required',
+        speak: 'Please say a name to look up.',
+      });
+    }
+    const matches = await findEmployeesForLookup(name);
+    const payload = buildLookupPayload(matches, name);
+    const format = String(req.query.format || '').trim().toLowerCase();
+    if (format === 'text' || format === 'plain') {
+      res.type('text/plain').send(payload.found && payload.extension ? payload.extension : payload.speak);
+      return;
+    }
+    res.json(payload);
+  } catch (e) {
+    debug('Route failed', e);
+    res.status(500).json({ error: e.message, speak: 'Lookup failed due to a server error.' });
+  }
 });
 
 app.post('/api/directory/reports', async (req, res) => {

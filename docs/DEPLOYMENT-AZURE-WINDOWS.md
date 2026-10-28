@@ -116,6 +116,7 @@ Optional:
 | Variable | Purpose |
 |----------|---------|
 | `DIRECTORY_ALLOW_PASSCODE_OUTSIDE=1` | Allow passcode access even when office IPs are configured |
+| `SIRI_LOOKUP_TOKEN` | Optional secret for iPhone Siri Shortcuts (`X-Siri-Token` header). See [SIRI-SHORTCUT.md](./SIRI-SHORTCUT.md). |
 | `DB_SSL=1` | TLS to remote MySQL (not needed for local MySQL) |
 
 **Never commit `.env` or real passwords to GitHub.**

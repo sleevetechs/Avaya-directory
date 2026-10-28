@@ -6,6 +6,7 @@ Handover and operational docs for IT staff managing **Compass Directory** (Avaya
 |----------|---------------|----------|
 | [**DEPLOYMENT-AZURE-WINDOWS.md**](./DEPLOYMENT-AZURE-WINDOWS.md) | IT / DevOps | Azure VM, RDP, IIS, MySQL, deployments, updates, troubleshooting |
 | [**ADMIN-GUIDE.md**](./ADMIN-GUIDE.md) | Admins & managers | Day-to-day use of admin panel, access control, imports |
+| [**SIRI-SHORTCUT.md**](./SIRI-SHORTCUT.md) | End users / IT | iPhone Siri Shortcut for extension lookup |
 
 **Quick links**
 
