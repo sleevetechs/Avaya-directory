@@ -817,6 +817,44 @@ async function evaluateLookupAccess(req) {
   return evaluatePublicAccess(req);
 }
 
+const LOOKUP_STOP_WORDS = new Set([
+  'what', 'whats', 'is', 'the', 'a', 'an', 'of', 'for', 'please', 'tell', 'me', 'my',
+  'extension', 'extensions', 'ext', 'extesnion', 'number', 'find', 'get', 'give', 'who',
+  'compass', 'directory', 'employee', 'how', 'whats', 'someone', 'person',
+]);
+
+/** Pull a person name out of natural phrases ("what is rifaz extension", etc.). */
+function parseLookupNameFromUtterance(raw) {
+  let s = String(raw || '')
+    .trim()
+    .replace(/[\u2018\u2019\u00B4`]/g, "'")
+    .replace(/[?!.]+$/g, '')
+    .trim();
+  if (!s) return '';
+  const patterns = [
+    /^(?:what(?:'s|\s+is)\s+(?:the\s+)?extensions?\s+of\s+)(.+)$/i,
+    /^(?:what(?:'s|\s+is)\s+)(.+?)(?:'s)?\s+extensions?\s*$/i,
+    /^(.+?)\s+extensions?\s*$/i,
+    /^(.+?)\s+ext\s*$/i,
+    /^extensions?\s+of\s+(.+)$/i,
+    /^extensions?\s+for\s+(.+)$/i,
+    /^(?:find|get|give\s+me)\s+(.+?)(?:'s)?\s+extensions?\s*$/i,
+  ];
+  for (const p of patterns) {
+    const m = s.match(p);
+    if (m && m[1]) {
+      s = String(m[1]).trim().replace(/^the\s+/i, '').replace(/[?.!]+$/, '');
+      break;
+    }
+  }
+  const tokens = s.split(/\s+/).filter((t) => {
+    const low = t.toLowerCase();
+    return t.length > 0 && !LOOKUP_STOP_WORDS.has(low);
+  });
+  if (tokens.length) return tokens.join(' ').slice(0, 80);
+  return s.slice(0, 80);
+}
+
 function normalizeLookupQuery(value) {
   return String(value || '')
     .toLowerCase()
@@ -3005,15 +3043,22 @@ app.get('/api/lookup', async (req, res) => {
         officeIpOnly: !!access.officeIpOnly,
       });
     }
-    const name = String(req.query.name || req.query.q || '').trim();
-    if (!name) {
+    const rawQuery = String(req.query.name || req.query.q || req.query.utterance || '').trim();
+    if (!rawQuery) {
       return res.status(400).json({
-        error: 'Query parameter name is required',
+        error: 'Query parameter name or q is required',
         speak: 'Please say a name to look up.',
       });
     }
+    const name = parseLookupNameFromUtterance(rawQuery);
+    if (!name) {
+      return res.status(400).json({
+        error: 'Could not understand the name',
+        speak: 'Please say who you want, for example Rifaz extension.',
+      });
+    }
     const matches = await findEmployeesForLookup(name);
-    const payload = buildLookupPayload(matches, name);
+    const payload = { ...buildLookupPayload(matches, name), query: rawQuery, parsed_name: name };
     const format = String(req.query.format || '').trim().toLowerCase();
     if (format === 'text' || format === 'plain') {
       res.type('text/plain').send(payload.found && payload.extension ? payload.extension : payload.speak);

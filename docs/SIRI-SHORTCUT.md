@@ -74,26 +74,37 @@ Same rules as the public directory:
 
 ---
 
+## Natural phrases (“Rifaz extension”, “what is the extension of Rifaz”, …)
+
+The server **understands many wordings** if you send the **whole sentence** in the URL:
+
+- `?q=what is the extension of rifaz`
+- `?q=rifaz extension`
+- `?q=rifaz ext`
+
+Use **Dictate Text** (or type) in the Shortcut, then put that text in **`q=`** (not only `name=`).
+
+---
+
 ## Build the Shortcut on iPhone
 
+**Recommended:** **Dictate Text** so people can ask in their own words.
+
 1. Open **Shortcuts** → **+** → **New Shortcut**.
-2. Add **Ask for Input** → “Who do you want to look up?” (or use **Dictate Text**).
-3. Add **Text** action:  
-   `https://directory.compasslog.com/api/lookup?name=`  
-   then **Combine** with the name (URL-encoded if needed — Shortcuts usually encodes in “Get Contents of URL”).
+2. Add **Dictate Text** → prompt e.g. “Ask about an extension” (or **Ask for Input** for name only).
+3. Add **Text**: `https://directory.compasslog.com/api/lookup?q=` then **Combine** with Dictated Text.  
+   *(Name-only variant: use `?name=` + input.)*
 4. Add **Get Contents of URL**:
-   - URL: combined text from step 3  
+   - URL: Combined Text  
    - Method: **GET**  
-   - Headers (if using token):  
-     - `X-Siri-Token` = your secret  
-     - or `X-Directory-Access` = passcode token  
+   - Headers: `X-Siri-Token` = your secret (if IT gave you one)
 5. Add **Get Dictionary from Input** (JSON from step 4).
 6. Add **Get Dictionary Value** → key **`speak`**.
 7. Add **Speak Text** → spoken result.
 8. Name the shortcut **Compass extension**.
-9. Shortcut details → **Add to Siri** → phrase e.g. **“Compass extension”**.
+9. **Add to Siri** → phrase e.g. **“Compass extension”**.
 
-**Try:** “Hey Siri, Compass extension” → say **Rifaz** → hear the extension.
+**Try:** “Hey Siri, Compass extension” → say **What is Rifaz extension** or just **Rifaz extension** → hear the answer.
 
 ### Simpler variant (`format=text`)
 
