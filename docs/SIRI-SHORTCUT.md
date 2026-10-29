@@ -23,12 +23,12 @@ Same rules as the public directory:
 
 ### `GET /api/lookup?name=rifaz`
 
-**Success (JSON):**
+**Success (JSON):** The `speak` field uses **spaced digits** (e.g. `1 8 5 4`) so Siri reads extensions one digit at a time.
 
 ```json
 {
   "found": true,
-  "speak": "Rifaz's extension is 1854.",
+  "speak": "Rifaz's extension is 1 8 5 4.",
   "extension": "1854",
   "mobile": "",
   "name": "Mohammed Rifaz …",

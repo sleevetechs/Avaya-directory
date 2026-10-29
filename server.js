@@ -945,6 +945,16 @@ function firstNameFromEmployee(name, query) {
   return name;
 }
 
+/** Space-separated digits so Siri says "one two zero five" not "twelve hundred five". */
+function extensionForSpeech(ext) {
+  const raw = String(ext || '').trim();
+  if (!raw) return '';
+  const first = raw.split(/[/|,]+/)[0].trim();
+  const digits = first.replace(/\D/g, '');
+  if (!digits) return raw;
+  return digits.split('').join(' ');
+}
+
 function buildLookupPayload(matches, query) {
   if (!matches.length) {
     return {
@@ -988,7 +998,7 @@ function buildLookupPayload(matches, query) {
   }
   const short = firstNameFromEmployee(best.name, query);
   let speak = ext
-    ? `${short}'s extension is ${ext.replace(/\s+/g, ' ')}.`
+    ? `${short}'s extension is ${extensionForSpeech(ext)}.`
     : `${short}'s mobile is ${mobile}.`;
   return {
     found: true,
