@@ -868,12 +868,25 @@ function scoreEmployeeNameMatch(empName, query) {
   const full = normalizeLookupQuery(empName);
   if (!q || !full) return 0;
   const parts = full.split(/[\s,]+/).filter(Boolean);
+  const qParts = q.split(' ').filter(Boolean);
+
   if (full === q) return 100;
+  if (qParts.length > 1) {
+    if (!qParts.every((qp) => full.includes(qp))) return 0;
+    if (full.includes(q)) return 92;
+    const ordered = qParts.every((qp, i) => {
+      const idx = full.indexOf(qp);
+      if (idx < 0) return false;
+      if (i === 0) return true;
+      const prev = full.indexOf(qParts[i - 1]);
+      return idx >= prev;
+    });
+    if (ordered) return 88;
+    return 70;
+  }
   if (parts.some((p) => p === q)) return 85;
   if (parts.some((p) => p.startsWith(q))) return 75;
   if (full.includes(q)) return 55;
-  const qParts = q.split(' ').filter(Boolean);
-  if (qParts.length > 1 && qParts.every((qp) => full.includes(qp))) return 65;
   return 0;
 }
 
@@ -882,20 +895,21 @@ async function findEmployeesForLookup(nameQuery) {
   if (!raw) return [];
   const tokens = raw.split(/\s+/).filter(Boolean);
   const terms = tokens.length ? tokens : [raw];
-  const ors = [];
+  const nameClauses = [];
   const params = [];
   for (const t of terms) {
     const safe = t.replace(/[%_\\]/g, '');
     if (!safe) continue;
-    ors.push('e.name LIKE ?');
+    nameClauses.push('e.name LIKE ?');
     params.push('%' + safe + '%');
   }
-  if (!ors.length) return [];
+  if (!nameClauses.length) return [];
+  const nameMatchSql = nameClauses.join(' AND ');
   const [emps] = await pool.execute(
     `SELECT e.id, e.name, e.dept, e.branch
      FROM employees e
      WHERE e.deleted_at IS NULL AND e.delete_requested_by IS NULL
-       AND (${ors.join(' OR ')})
+       AND (${nameMatchSql})
      ORDER BY e.name
      LIMIT 30`,
     params
